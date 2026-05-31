@@ -524,7 +524,209 @@ overridden before the include.
 
 ---
 
-## 11. Parallel execution
+## 11. Discovered dependencies
+
+Some prerequisites are unknown until a recipe runs. A C compile reads
+headers no mkfile declared; a codegen step may emit files no mkfile
+listed. Make papers over this with `-MMD` plus `-include *.d` plus `-MP`
+empty-rule hacks. mk gives discovery a first-class place in the model.
+
+### Hard and soft edges
+
+Every dependency edge is one of two kinds.
+
+| Edge | Source | Constrains | Required to exist? |
+|---|---|---|---|
+| **Hard** | Declared in the mkfile (`a: b`) | Ordering **and** staleness | Yes — it is an ordering constraint |
+| **Soft** | Discovered by running the recipe | Staleness only | No — absence is just "changed" |
+
+A hard edge promises build *order*: `b` is built before `a`'s recipe
+runs. A soft edge cannot constrain order — you do not learn it until
+*after* the recipe has run — so it can only invalidate.
+
+### Authoring rule
+
+> **Declare in-graph targets. Discover leaves.**
+
+An edge must be hard iff the path is an *in-graph target* — some rule
+can produce it. Everything else is safe to discover.
+
+The criterion is **structural**, not based on provenance. Whether a file
+is committed, and whether it was once emitted by some out-of-band
+generator, are both irrelevant. Committed generated artefacts (vendored
+protobuf output, checked-in parsers, lockfiles) are common and
+legitimate; committedness tells you nothing about whether *this* build
+produces the file.
+
+Because mk knows its own target set, this rule is enforced: a discovered
+read whose path matches a known target or pattern that was not declared
+as a prerequisite is reported (or auto-promoted to a hard edge, per
+policy). It is a latent ordering race.
+
+### Staleness contract
+
+Two rules make the model airtight and fix Make's deleted-file failure:
+
+1. **A recorded soft-dep that has vanished counts as "changed," never as
+   "missing input."** Deleting a header that no source still references
+   means the recorded input set no longer matches reality → the target
+   is stale → rebuild. The rebuild records a fresh read-set that omits
+   the deleted file; the stale edge is gone. The edge *triggers the very
+   rebuild that erases it* — no `-MP`, no empty phony rules, no `.d`
+   files in the tree.
+
+2. **Replace the discovered set wholesale on each successful run — never
+   union.** Unioning lets stale edges accumulate. Wholesale replacement
+   guarantees the recorded set always reflects the *last actual*
+   execution.
+
+Deleting a header while *leaving* an `#include` of it produces a real
+compiler error, which mk surfaces — it always defers to the recipe's
+exit status rather than pre-judging from a stale edge.
+
+### Mechanisms
+
+Discovery is one capability with three producers.
+
+**Depfile adapter.** The recipe emits a dependency list as a byproduct;
+mk parses it, normalizes paths, folds it into the build database, and
+discards the file:
+
+```
+build/{name}.o [deps: gcc]: src/{name}.c
+    $cc $cflags -MMD -MF $depfile -c $input -o $target
+```
+
+`[deps: <format>]` names a parser; `$depfile` is a path mk allocates
+under `.mk/deps/` (partitioned by config, mirroring the target path).
+Formats: `gcc`/`makefile`, `msvc`, `json`, `lines`. This is strictly
+better than `-include`: mk owns the parse, folds into the content-hashed
+DB, and no `.d` enters the source tree. `std/c.mk` and `std/cxx.mk`
+carry this annotation, so `include std/c.mk` gets correct header
+tracking with no ritual visible.
+
+**Trace.** Observe the recipe's actual file accesses with zero tool
+cooperation:
+
+```
+build/{name}.o [deps: trace]: src/{name}.c
+    $cc $cflags -c $input -o $target
+```
+
+mk runs the recipe under observation (macOS: sandbox profile /
+`fs_usage`; Linux: seccomp-bpf, ptrace, or `fanotify`) and records every
+path opened for read. Works for any tool — protoc, sass, bundlers — not
+just compilers. Platform-specific and slower than a depfile, so it is
+opt-in. Trace also powers verification (below).
+
+**Scan nodes.** Soft edges cannot inform *this* build's schedule —
+except via a cheap pre-pass. A scan node is a separate lightweight
+recipe whose output *is* the dependency set, scheduled before the heavy
+recipe:
+
+```
+build/{name}.o [scan: cc -M $cflags $input]: src/{name}.c
+    $cc $cflags -c $input -o $target
+```
+
+A scan node is a first-class graph node: it has its own deps (including
+any generated headers it scans through, which forces the correct
+interleaving for free) and is scheduled like any other target.
+"Two-phase" *emerges* wherever a scan node exists rather than being a
+second execution mode.
+
+### Record-and-reuse is the spine
+
+Two-phase analysis-then-execution is the right capability but the wrong
+default. **The previous build's recorded soft-edges *are* the analysis
+pass.** On an incremental build, last run's discovered set is an
+exact-as-of-last-build approximation of the dependency shape; mk
+schedules against it, executes, and re-records. This is safe even when
+the shape has drifted, because correctness comes from the post-hoc
+content-hash check plus wholesale re-record, never from the schedule.
+Scheduling on a stale recorded edge can produce a slightly suboptimal
+parallel schedule that self-corrects next run; it can never miss a
+rebuild.
+
+So execute-and-record is the default; scan nodes are an opt-in
+optimization for large graphs and remote execution, where an action's
+inputs must be known before it ships off-machine.
+
+### Build database
+
+The build database (§7) gains, per target+config:
+
+- **Discovered input set** — soft edges from the last successful run,
+  with content fingerprints at that time.
+- **Discovered output set** — for dynamic outputs (below).
+
+Staleness becomes: declared set changed, discovered set changed
+(including a vanished member), any input fingerprint changed, recipe
+text changed, or an output fingerprint changed. Everything is
+partitioned by config exactly as the existing database is.
+
+### Dynamic outputs
+
+Symmetric to dynamic inputs — a recipe may produce a set of outputs not
+known statically:
+
+```
+gen/ [writes: manifest gen/.manifest]: schema.idl
+    idlc --emit-manifest gen/.manifest schema.idl
+```
+
+`[writes: manifest <path>]` reads a producer-emitted list of outputs;
+`[writes: trace]` observes them. mk records the discovered output set
+and fingerprints each, so downstream consumers and `mk clean` see the
+real artefacts.
+
+### Verification
+
+Under trace, mk knows the complete read/write set, so it can assert the
+build is correctly specified — something Make cannot do at all. Run
+with `--verify` (or per-target `[verify]`) and mk flags:
+
+- **Undeclared reads of an in-graph target** — a recipe read a path
+  this build also produces but did not declare. A latent ordering race.
+- **Undeclared writes** — output outside the declared/discovered output
+  set; graph pollution.
+- **Reads outside a declared envelope** — see below.
+
+A recipe may bound its dynamism without enumerating it:
+
+```
+build/{name}.o [reads: include/** src/**]: src/{name}.c
+    …
+```
+
+`[reads: <glob>…]` is a static bound on what the recipe may read. The
+sandbox enforces it; the verifier checks against it; a remote scheduler
+can pre-stage it. Optional.
+
+### Syntax summary
+
+| Annotation | Meaning |
+|---|---|
+| `[deps: gcc\|makefile\|msvc\|json\|lines]` | Recipe emits a depfile at `$depfile`; folded post-run |
+| `[deps: trace]` | mk observes the recipe's read-set |
+| `[scan: <cmd>]` | Separate cheap node producing schedulable edges before the recipe |
+| `[scan-format: <fmt>]` | Format of `[scan]` output (default `gcc`) |
+| `[writes: manifest <path>]` | Recipe emits a list of its outputs |
+| `[writes: trace]` | mk observes the recipe's write-set |
+| `[reads: <glob>…]` | Declared read envelope (static bound) |
+| `[verify]` | Force hermetic verification for this target |
+
+New recipe variable: `$depfile` — path mk allocates under `.mk/deps/`
+for this target's depfile, set only when the rule has a `[deps: …]`
+annotation. Sits alongside `$target`, `$input`, `$inputs`, `$stem`,
+and `$changed`.
+
+See [`docs/discovered-dependencies.md`](docs/discovered-dependencies.md)
+for the full rationale, prior art, and non-goals.
+
+---
+
+## 12. Parallel execution
 
 ```
 $ mk -j8 test
@@ -540,7 +742,7 @@ each recipe are buffered and printed together on completion.
 
 ---
 
-## 12. Command-line interface
+## 13. Command-line interface
 
 ```
 mk [flags] [target...] [var=value...]
@@ -572,7 +774,7 @@ If no target is specified, mk builds the first non-task rule.
 
 ---
 
-## 13. What's removed
+## 14. What's removed
 
 | Make feature | mk stance |
 |---|---|
@@ -595,7 +797,7 @@ If no target is specified, mk builds the first non-task rule.
 | `$(MAKE)` recursive make | Scoped includes build a single graph — no subprocess boundary |
 | Double-colon rules | Removed |
 | Archive members `lib(member)` | Removed |
-| `-include *.d` dependency ritual | Build database tracks deps |
+| `-include *.d` / `-MP` ritual | Recipes report what they read; mk records discovered edges in the content-hashed DB (§11). No `.d` files; deleted headers self-heal. |
 | `%` (single anonymous stem) | `{name}` (named, multiple) |
 | `export` / `unexport` | All variables are environment |
 | `override` | Command-line always wins |
@@ -605,7 +807,7 @@ If no target is specified, mk builds the first non-task rule.
 
 ---
 
-## 14. What's kept
+## 15. What's kept
 
 | Feature | Notes |
 |---|---|
@@ -624,7 +826,7 @@ If no target is specified, mk builds the first non-task rule.
 
 ---
 
-## 15. Example: full project
+## 16. Example: full project
 
 ```
 # C++ project with tests, benchmarks, sanitizer support

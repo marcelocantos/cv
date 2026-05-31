@@ -27,6 +27,7 @@ Snapshot as of v0.8.0.
 | `--version` | bool | `false` | **Stable** |
 | `--why` | bool | `false` | **Stable** |
 | `--complete` | bool | `false` | **Needs review** — internal flag for shell completion; may be replaced by a subcommand or hidden flag |
+| `--verify` | bool | `false` | **Needs review** — new in v0.9.0; errors on undeclared reads of in-graph targets and on envelope violations (DESIGN.md §11) |
 
 Positional arguments:
 
@@ -74,6 +75,11 @@ Recursive definitions (`foo = $foo bar`) are a parse error — **Stable**.
 | Constrained captures (regex) | `{name/\d+}` | **Needs review** — syntax may evolve |
 | `[keep]` annotation | `target [keep]: ...` | **Stable** |
 | `[fingerprint: cmd]` annotation | `target [fingerprint: cmd]: ...` | **Stable** |
+| `[deps: <format>]` annotation | `target [deps: gcc\|makefile\|msvc\|json\|lines\|trace]: ...` (DESIGN.md §11) | **Needs review** — new in v0.9.0. `trace` is Linux-only (strace); macOS returns a clear "not yet implemented" error. |
+| `[scan: <cmd>]` annotation | `target [scan: cc -M -MG $input]: ...` (DESIGN.md §11) | **Needs review** — new in v0.9.0. Cheap pre-pass that produces schedulable soft edges before the heavy recipe runs. |
+| `[scan-format: <format>]` annotation | defaults to `gcc`. Same formats as `[deps: …]`. | **Needs review** — new in v0.9.0 |
+| `[writes: <spec>]` annotation | `target [writes: manifest path/to/manifest]: ...` or `[writes: trace]` (Linux). DESIGN.md §11. | **Needs review** — new in v0.9.0 |
+| `[reads: <glob>…]` annotation | declared read envelope; mk warns (or errors under `--verify`) when discovered reads fall outside the globs. | **Needs review** — new in v0.9.0; supports simple `*` and `**` globs. |
 | Recipe prefix `@` (silent) | **Stable** |
 | Recipe prefix `-` (ignore errors) | **Stable** |
 | Inline comments | `target: dep # comment` | **Stable** |
@@ -87,6 +93,7 @@ Recursive definitions (`foo = $foo bar`) are a parse error — **Stable**.
 | `$inputs` | **Stable** |
 | `$changed` | **Stable** |
 | `$stem` | **Stable** |
+| `$depfile` (set when rule has `[deps: …]`) | **Needs review** — new in v0.9.0 |
 
 #### Include directives
 
@@ -153,8 +160,8 @@ Recursive definitions (`foo = $foo bar`) are a parse error — **Stable**.
 
 | File | Variables | Rules/Tasks | Stability |
 |------|-----------|-------------|-----------|
-| `std/c.mk` | `cc`, `cflags`, `ldflags`, `ar` | `{name}.o: {name}.c` | **Stable** |
-| `std/cxx.mk` | `cxx`, `cxxflags`, `ldflags` | `{name}.o: {name}.cc` | **Stable** |
+| `std/c.mk` | `cc`, `cflags`, `ldflags`, `ar` | `{name}.o [deps: gcc]: {name}.c` | **Stable** — recipe now emits `-MMD -MF $depfile` (v0.9.0) |
+| `std/cxx.mk` | `cxx`, `cxxflags`, `ldflags` | `{name}.o [deps: gcc]: {name}.cc` | **Stable** — recipe now emits `-MMD -MF $depfile` (v0.9.0) |
 | `std/go.mk` | `go`, `goflags` | `!build`, `!test`, `!vet` | **Needs review** — may need more tasks (e.g. `!lint`, `!fmt`) |
 
 ### Build state format (`.mk/state.json`)
@@ -167,13 +174,17 @@ Recursive definitions (`foo = $foo bar`) are a parse error — **Stable**.
       "input_hashes": {"<prereq>": "<sha256-hex>"},
       "output_hash": "<sha256-hex>",
       "fingerprint_hash": "<sha256-hex>",
-      "prereqs": ["<prereq>"]
+      "prereqs": ["<prereq>"],
+      "discovered_prereqs": ["<discovered-path>"],
+      "discovered_input_hashes": {"<discovered-path>": "<sha256-hex>"}
     }
   }
 }
 ```
 
 Config-specific state: `.mk/state-<config1>-<config2>.json`.
+Per-target depfiles emitted by `[deps: …]` rules: `.mk/deps/[<config>/]<target>.d`
+(written by the recipe, parsed and removed by mk after a successful run).
 
 Stability: **Needs review** — format is functional but may gain fields (e.g. build timestamps, output size). Existing fields are unlikely to change.
 

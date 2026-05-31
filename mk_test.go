@@ -521,7 +521,7 @@ out.txt: a.txt b.txt
 	}
 
 	// First build: all prereqs are changed (no previous state)
-	exec := NewExecutor(graph, state, vars, false, false, false, 1)
+	exec := NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 1})
 	if err := exec.Build("out.txt"); err != nil {
 		t.Fatal(err)
 	}
@@ -543,7 +543,7 @@ out.txt: a.txt b.txt
 		t.Fatal(err)
 	}
 
-	exec = NewExecutor(graph, state, vars, false, false, false, 1)
+	exec = NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 1})
 	if err := exec.Build("out.txt"); err != nil {
 		t.Fatal(err)
 	}
@@ -687,7 +687,7 @@ out1.txt out2.txt: input.txt
 		t.Fatal(err)
 	}
 
-	exec := NewExecutor(graph, state, vars, false, false, false, 1)
+	exec := NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 1})
 
 	// Build first output
 	if err := exec.Build("out1.txt"); err != nil {
@@ -761,7 +761,7 @@ out.txt: src.txt | order.txt
 	}
 
 	// First build
-	exec := NewExecutor(graph, state, vars, false, false, false, 1)
+	exec := NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 1})
 	if err := exec.Build("out.txt"); err != nil {
 		t.Fatal(err)
 	}
@@ -780,7 +780,7 @@ out.txt: src.txt | order.txt
 		t.Fatal(err)
 	}
 
-	exec = NewExecutor(graph, state, vars, false, false, false, 1)
+	exec = NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 1})
 	if err := exec.Build("out.txt"); err != nil {
 		t.Fatal(err)
 	}
@@ -818,7 +818,7 @@ out.txt: a.txt | b.txt
 		t.Fatal(err)
 	}
 
-	exec := NewExecutor(graph, state, vars, false, false, false, 1)
+	exec := NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 1})
 	if err := exec.Build("out.txt"); err != nil {
 		t.Fatal(err)
 	}
@@ -1325,7 +1325,7 @@ extracted/config.json [fingerprint: tar xf archive.tar.gz -O config.json]: archi
 	}
 
 	// First build
-	exec := NewExecutor(graph, state, vars, false, false, false, 1)
+	exec := NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 1})
 	if err := exec.Build("extracted/config.json"); err != nil {
 		t.Fatal(err)
 	}
@@ -1351,7 +1351,7 @@ extracted/config.json [fingerprint: tar xf archive.tar.gz -O config.json]: archi
 		t.Fatal(err)
 	}
 
-	exec = NewExecutor(graph, state, vars, false, false, false, 1)
+	exec = NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 1})
 	if err := exec.Build("extracted/config.json"); err != nil {
 		t.Fatal(err)
 	}
@@ -1372,7 +1372,7 @@ extracted/config.json [fingerprint: tar xf archive.tar.gz -O config.json]: archi
 		t.Fatal(err)
 	}
 
-	exec = NewExecutor(graph, state, vars, false, false, false, 1)
+	exec = NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 1})
 	if err := exec.Build("extracted/config.json"); err != nil {
 		t.Fatal(err)
 	}
@@ -1438,7 +1438,7 @@ out2.txt: b.txt
 		t.Fatal(err)
 	}
 
-	exec := NewExecutor(graph, state, vars, false, false, false, 2)
+	exec := NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 2})
 	if err := exec.Build("out1.txt"); err != nil {
 		t.Fatal(err)
 	}
@@ -1488,7 +1488,7 @@ right.txt: root.txt
 		t.Fatal(err)
 	}
 
-	exec := NewExecutor(graph, state, vars, false, false, false, 4)
+	exec := NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 4})
 	if err := exec.Build("top.txt"); err != nil {
 		t.Fatal(err)
 	}
@@ -1528,7 +1528,7 @@ out1.txt out2.txt: input.txt
 		t.Fatal(err)
 	}
 
-	exec := NewExecutor(graph, state, vars, false, false, false, 4)
+	exec := NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 4})
 
 	// Build both outputs — recipe should only run once
 	if err := exec.Build("out1.txt"); err != nil {
@@ -1576,7 +1576,7 @@ top.txt: bad.txt
 		t.Fatal(err)
 	}
 
-	exec := NewExecutor(graph, state, vars, false, false, false, 4)
+	exec := NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 4})
 
 	// good_out should succeed despite bad existing
 	if err := exec.Build("good_out.txt"); err != nil {
@@ -1698,7 +1698,7 @@ out.txt: input.txt
 		t.Fatal(err)
 	}
 
-	ex := NewExecutor(graph, state, vars, false, false, false, 1)
+	ex := NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 1})
 	if err := ex.Build("out.txt"); err != nil {
 		t.Fatal(err)
 	}

@@ -38,6 +38,11 @@ type resolvedRule struct {
 	isTask           bool
 	keep             bool   // [keep] annotation — don't delete on error
 	fingerprint      string // [fingerprint: command] for non-file artifacts
+	depsFormat       string // [deps: <format>] — gcc, makefile, ...
+	scan             string // [scan: <command>] — pre-pass producing schedulable soft edges
+	scanFormat       string // [scan-format: <format>] — defaults to "gcc"
+	writes           string // [writes: <spec>] — dynamic outputs (manifest path, trace, ...)
+	reads            string // [reads: <glob>…] — declared read envelope
 	stem             string // first capture value from pattern match
 }
 
@@ -80,6 +85,11 @@ type patternRule struct {
 	recipe                  []string
 	keep                    bool
 	fingerprint             string
+	depsFormat              string
+	scan                    string
+	scanFormat              string
+	writes                  string
+	reads                   string
 }
 
 // BuildGraph constructs a dependency graph from a parsed file.
@@ -288,7 +298,16 @@ func (g *Graph) addRule(r Rule) error {
 	}
 
 	if isPattern {
-		pr := patternRule{recipe: r.Recipe, keep: r.Keep, fingerprint: r.Fingerprint}
+		pr := patternRule{
+			recipe:      r.Recipe,
+			keep:        r.Keep,
+			fingerprint: r.Fingerprint,
+			depsFormat:  r.DepsFormat,
+			scan:        r.Scan,
+			scanFormat:  r.ScanFormat,
+			writes:      r.Writes,
+			reads:       r.Reads,
+		}
 		for _, t := range expandedTargets {
 			p, _, err := ParsePattern(t)
 			if err != nil {
@@ -322,6 +341,11 @@ func (g *Graph) addRule(r Rule) error {
 			isTask:           r.IsTask,
 			keep:             r.Keep,
 			fingerprint:      r.Fingerprint,
+			depsFormat:       r.DepsFormat,
+			scan:             r.Scan,
+			scanFormat:       r.ScanFormat,
+			writes:           r.Writes,
+			reads:            r.Reads,
 		})
 	}
 
@@ -545,9 +569,26 @@ func (g *Graph) Resolve(target string) (*resolvedRule, error) {
 					stem = captures[tp.Captures[0]]
 				}
 
+				// Expand captures in scan command too.
+				scanCmd := pr.scan
+				for k, v := range captures {
+					scanCmd = strings.ReplaceAll(scanCmd, "{"+k+"}", v)
+				}
+
+				// Expand captures in writes spec.
+				writes := pr.writes
+				for k, v := range captures {
+					writes = strings.ReplaceAll(writes, "{"+k+"}", v)
+				}
+
 				merged.recipe = recipe
 				merged.keep = pr.keep
 				merged.fingerprint = fp
+				merged.depsFormat = pr.depsFormat
+				merged.scan = scanCmd
+				merged.scanFormat = pr.scanFormat
+				merged.writes = writes
+				merged.reads = pr.reads
 				merged.stem = stem
 			}
 
@@ -564,6 +605,30 @@ func (g *Graph) Resolve(target string) (*resolvedRule, error) {
 	}
 
 	return nil, fmt.Errorf("no rule to build %q", target)
+}
+
+// HasRuleFor reports whether the graph contains a rule (explicit or
+// pattern) that produces the given path. Unlike Resolve, it does NOT
+// fall back to "file exists" — the question is strictly "is this an
+// in-graph target?" The answer drives the §11 verification check for
+// undeclared reads of paths this build also produces (a latent ordering
+// race).
+func (g *Graph) HasRuleFor(path string) bool {
+	for i := range g.rules {
+		for _, t := range g.rules[i].targets {
+			if t == path {
+				return true
+			}
+		}
+	}
+	for _, pr := range g.patterns {
+		for _, tp := range pr.targetPatterns {
+			if _, ok := tp.Match(path); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // PrintGraph prints the dependency subgraph rooted at the given targets as DOT.

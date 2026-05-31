@@ -1,0 +1,82 @@
+schema_version: 5
+targets:
+  T1:
+    name: Discovered dependencies supersede the -MMD / -include / -MP ritual
+    status: converging
+    acceptance:
+    - DESIGN.md §11 fully implemented across all six phases
+    - Make-style `-include *.d` and `-MP` ritual no longer needed by users
+    - std/c.mk and std/cxx.mk provide self-healing header tracking out of the box
+    context: |
+      The Make `-MMD` / `-include *.d` / `-MP` pastiche is unsound: lagging
+      depfiles, fatal-on-deleted-header behaviour, tool-specific, untracked
+      reads as silent corruption. DESIGN.md §11 replaces this with hard
+      (declared) and soft (discovered) edges, content-hashed staleness with
+      the "vanished = changed, wholesale replace" contract, and unified
+      mechanisms (depfile adapter / trace / scan node).
+    origin: design dialogue, 2026-05-26..30
+    discovered: 2026-05-31
+  T1.1:
+    name: Phase 1 — depfile adapter + discovered-input DB + staleness rules
+    status: converging
+    depends_on: []
+    acceptance:
+    - "[deps: gcc] / [deps: makefile] annotation parses; AST and graph carry it"
+    - "$depfile variable expands per (target, config) under .mk/deps/"
+    - gcc/Make-format depfile parser handles line continuation and escaped spaces
+    - TargetState carries DiscoveredPrereqs + DiscoveredInputHashes
+    - IsStale flags discovered-set change (incl. vanished member) and hash change
+    - Record wholesale-replaces discovered set (never unions)
+    - std/c.mk and std/cxx.mk annotated; `include std/c.mk` gives correct header tracking
+    - tests cover annotation parse, depfile parse, staleness rules, and an E2E C compile + header-edit
+    context: |
+      Phase 1 covers ~80% of user-visible value with no platform-specific
+      tracing, no scan nodes, no dynamic outputs, no verification. One PR.
+    origin: T1 decomposition
+    discovered: 2026-05-31
+  T1.2:
+    name: Phase 2 — additional depfile formats (msvc, json, lines)
+    status: converging
+    depends_on: [T1.1]
+    acceptance:
+    - "[deps: msvc] parses cl.exe /showIncludes output"
+    - "[deps: json] parses a JSON array of paths"
+    - "[deps: lines] parses newline- or NUL-separated paths"
+    discovered: 2026-05-31
+  T1.3:
+    name: Phase 3 — in-graph verification (--verify)
+    status: converging
+    depends_on: [T1.1]
+    acceptance:
+    - --verify flag wired through executor
+    - A discovered read whose path matches a known target/pattern not declared as prereq is flagged
+    - Either error or auto-promote, per config
+    context: Cheap, high-value check that reuses Phase 1 discovered reads — no tracing required.
+    discovered: 2026-05-31
+  T1.4:
+    name: Phase 4 — scan nodes (two-phase analysis)
+    status: converging
+    depends_on: [T1.1]
+    acceptance:
+    - "[scan: <cmd>] annotation parses; scan command is a first-class graph node"
+    - Scan node's output (format per [scan-format]) feeds schedulable soft edges before the heavy recipe
+    - Scan-through-generated-headers interleaving works (scan node may itself depend on declared targets)
+    discovered: 2026-05-31
+  T1.5:
+    name: Phase 5 — dynamic outputs ([writes: manifest …])
+    status: converging
+    depends_on: [T1.1]
+    acceptance:
+    - "[writes: manifest <path>] parses and is folded into the DB"
+    - Discovered output set is fingerprinted and visible to consumers and `mk clean`
+    discovered: 2026-05-31
+  T1.6:
+    name: Phase 6 — trace mode + envelopes ([deps/writes: trace], [reads: …])
+    status: converging
+    depends_on: [T1.1, T1.5]
+    acceptance:
+    - "[deps: trace] observes read-set on macOS and Linux"
+    - "[writes: trace] observes write-set"
+    - "[reads: <glob>…] declared envelope is enforced by sandbox / checked by verifier"
+    context: Largest platform-specific chunk; deferrable behind the rest.
+    discovered: 2026-05-31
