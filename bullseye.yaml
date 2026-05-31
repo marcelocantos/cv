@@ -2,7 +2,7 @@ schema_version: 5
 targets:
   T1:
     name: Discovered dependencies supersede the -MMD / -include / -MP ritual
-    status: identified
+    status: converging
     acceptance:
     - DESIGN.md §11 fully implemented across all six phases
     - Make-style `-include *.d` and `-MP` ritual no longer needed by users
@@ -18,7 +18,7 @@ targets:
     discovered: 2026-05-31
   T1.1:
     name: Phase 1 — depfile adapter + discovered-input DB + staleness rules
-    status: identified
+    status: converging
     depends_on: []
     acceptance:
     - "[deps: gcc] / [deps: makefile] annotation parses; AST and graph carry it"
@@ -36,7 +36,7 @@ targets:
     discovered: 2026-05-31
   T1.2:
     name: Phase 2 — additional depfile formats (msvc, json, lines)
-    status: identified
+    status: converging
     depends_on: [T1.1]
     acceptance:
     - "[deps: msvc] parses cl.exe /showIncludes output"
@@ -45,7 +45,7 @@ targets:
     discovered: 2026-05-31
   T1.3:
     name: Phase 3 — in-graph verification (--verify)
-    status: identified
+    status: converging
     depends_on: [T1.1]
     acceptance:
     - --verify flag wired through executor
@@ -55,7 +55,7 @@ targets:
     discovered: 2026-05-31
   T1.4:
     name: Phase 4 — scan nodes (two-phase analysis)
-    status: identified
+    status: converging
     depends_on: [T1.1]
     acceptance:
     - "[scan: <cmd>] annotation parses; scan command is a first-class graph node"
@@ -64,7 +64,7 @@ targets:
     discovered: 2026-05-31
   T1.5:
     name: Phase 5 — dynamic outputs ([writes: manifest …])
-    status: identified
+    status: converging
     depends_on: [T1.1]
     acceptance:
     - "[writes: manifest <path>] parses and is folded into the DB"
@@ -72,7 +72,7 @@ targets:
     discovered: 2026-05-31
   T1.6:
     name: Phase 6 — trace mode + envelopes ([deps/writes: trace], [reads: …])
-    status: identified
+    status: converging
     depends_on: [T1.1, T1.5]
     acceptance:
     - "[deps: trace] observes read-set on macOS and Linux"

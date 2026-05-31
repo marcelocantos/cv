@@ -4,6 +4,7 @@
 package mk
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,27 +19,122 @@ import (
 //   - "gcc", "makefile": Makefile-style depfile as emitted by gcc/clang
 //     -MMD/-MD/-M. The file looks like:
 //
-//       target1 target2: prereq1 prereq2 \
-//         prereq3 prereq4
+//         target1 target2: prereq1 prereq2 \
+//           prereq3 prereq4
 //
-//     Multiple target groups (gcc -MP) are tolerated; their phony empty rules
-//     contribute nothing. Backslash-newline continues a line. A backslash
-//     before a space escapes the space (paths with spaces). Other backslash
-//     escapes are passed through.
+//     Multiple target groups (gcc -MP) are tolerated; their phony empty
+//     rules contribute nothing. Backslash-newline continues a line. A
+//     backslash before a space escapes the space (paths with spaces).
 //
-// The returned paths are cleaned with filepath.Clean but otherwise preserved
-// as the depfile emitted them (relative or absolute as-is).
+//   - "msvc": cl.exe /showIncludes output. Each include line begins with
+//     "Note: including file:" (and may be indented with extra spaces to
+//     denote nesting). Other lines (normal compile output) are ignored.
+//
+//   - "json": a JSON array of strings, each a path.
+//
+//   - "lines": newline- or NUL-separated paths. Blank lines are skipped.
+//
+// The returned paths are cleaned with filepath.Clean but otherwise
+// preserved as the depfile emitted them (relative or absolute as-is).
+// Paths are deduplicated in first-seen order.
 func ParseDepfile(path, format string) ([]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	return parseDepfileBytes(data, format)
+}
+
+// parseDepfileBytes is the in-memory variant — used by [scan: …] which
+// captures its command's stdout rather than going through a file.
+func parseDepfileBytes(data []byte, format string) ([]string, error) {
 	switch format {
 	case "gcc", "makefile", "":
 		return parseMakefileDepfile(string(data))
+	case "msvc":
+		return parseMSVCDepfile(string(data)), nil
+	case "json":
+		return parseJSONDepfile(data)
+	case "lines":
+		return parseLinesDepfile(string(data)), nil
 	default:
 		return nil, fmt.Errorf("unknown depfile format %q", format)
 	}
+}
+
+// msvcShowIncludesPrefix is the English prefix cl.exe /showIncludes uses
+// before each header path. Non-English locales emit a localised string;
+// users on those locales should set their locale to English for the build
+// or run cl.exe under `LANG=en_US.UTF-8`.
+const msvcShowIncludesPrefix = "Note: including file:"
+
+func parseMSVCDepfile(src string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(src, "\n") {
+		line = strings.TrimRight(line, "\r")
+		idx := strings.Index(line, msvcShowIncludesPrefix)
+		if idx < 0 {
+			continue
+		}
+		// /showIncludes indents the path with one space per nesting level.
+		path := strings.TrimSpace(line[idx+len(msvcShowIncludesPrefix):])
+		if path == "" {
+			continue
+		}
+		path = filepath.Clean(path)
+		if seen[path] {
+			continue
+		}
+		seen[path] = true
+		out = append(out, path)
+	}
+	return out
+}
+
+func parseJSONDepfile(data []byte) ([]string, error) {
+	var raw []string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("json depfile: %w", err)
+	}
+	out := make([]string, 0, len(raw))
+	seen := map[string]bool{}
+	for _, p := range raw {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		p = filepath.Clean(p)
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+func parseLinesDepfile(src string) []string {
+	// Accept either NUL- or newline-separated entries.
+	sep := byte('\n')
+	if strings.IndexByte(src, 0) >= 0 {
+		sep = 0
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, part := range strings.Split(src, string(sep)) {
+		p := strings.TrimSpace(strings.TrimRight(part, "\r"))
+		if p == "" {
+			continue
+		}
+		p = filepath.Clean(p)
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
 }
 
 // parseMakefileDepfile parses a Makefile-syntax depfile. The targets are

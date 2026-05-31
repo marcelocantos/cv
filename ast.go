@@ -40,6 +40,10 @@ type Rule struct {
 	Keep             bool   // [keep] annotation
 	Fingerprint      string // [fingerprint: command] for non-file artifacts
 	DepsFormat       string // [deps: <format>] — gcc, makefile, etc.
+	Scan             string // [scan: <command>] — cheap pre-pass producing schedulable soft edges
+	ScanFormat       string // [scan-format: <format>] — defaults to "gcc"
+	Writes           string // [writes: <spec>] — e.g. "manifest path/to/manifest" or "trace"
+	Reads            string // [reads: <glob>...] — declared read envelope (whitespace-separated globs)
 	Line             int
 }
 

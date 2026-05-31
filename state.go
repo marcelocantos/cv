@@ -50,6 +50,12 @@ type TargetState struct {
 	// successful run. See DESIGN.md §11.
 	DiscoveredPrereqs     []string          `json:"discovered_prereqs,omitempty"`
 	DiscoveredInputHashes map[string]string `json:"discovered_input_hashes,omitempty"`
+
+	// Discovered outputs — paths the recipe wrote that weren't statically
+	// declared (DESIGN.md §11 dynamic outputs). Stored only when the rule
+	// has a [writes: …] annotation.
+	DiscoveredOutputs      []string          `json:"discovered_outputs,omitempty"`
+	DiscoveredOutputHashes map[string]string `json:"discovered_output_hashes,omitempty"`
 }
 
 func LoadState(configSuffix string) *BuildState {
@@ -152,6 +158,13 @@ func (s *BuildState) IsStale(targets []string, prereqs []string, recipeText, fin
 			if discoveredStale(ts, cache) {
 				return true
 			}
+
+			// Check discovered outputs: if any are missing or modified
+			// outside the build, the target is stale (same contract as
+			// the declared output's OutputHash check).
+			if discoveredOutputsStale(ts, cache) {
+				return true
+			}
 		}
 	}
 
@@ -166,6 +179,21 @@ func discoveredStale(ts *TargetState, cache *HashCache) bool {
 		h, err := cache.Hash(p)
 		if err != nil {
 			// Vanished or unreadable: treat as changed, not as error.
+			return true
+		}
+		if h != recordedHash {
+			return true
+		}
+	}
+	return false
+}
+
+// discoveredOutputsStale returns true if any recorded discovered output
+// is missing or has been modified outside the build.
+func discoveredOutputsStale(ts *TargetState, cache *HashCache) bool {
+	for p, recordedHash := range ts.DiscoveredOutputHashes {
+		h, err := cache.Hash(p)
+		if err != nil {
 			return true
 		}
 		if h != recordedHash {
@@ -252,10 +280,12 @@ func (s *BuildState) WhyStale(targets []string, prereqs []string, recipeText, fi
 // Record records a successful build for all targets.
 //
 // discovered is the set of prerequisites the recipe actually read, learned
-// post-run (e.g., from a depfile). It is recorded wholesale — never unioned
-// with prior state — so the recorded set always reflects the most recent
-// run's actual reads (DESIGN.md §11).
-func (s *BuildState) Record(targets []string, prereqs []string, recipeText, fingerprint string, discovered []string, cache *HashCache) {
+// post-run (e.g., from a depfile). discoveredOutputs is the set of outputs
+// the recipe wrote beyond the declared targets ([writes: …]). Both are
+// recorded wholesale — never unioned with prior state — so the recorded
+// sets always reflect the most recent run's actual reads/writes
+// (DESIGN.md §11).
+func (s *BuildState) Record(targets []string, prereqs []string, recipeText, fingerprint string, discovered, discoveredOutputs []string, cache *HashCache) {
 	// Build TargetState objects (I/O: hashing) without holding the lock.
 	states := make(map[string]*TargetState, len(targets))
 	for _, target := range targets {
@@ -277,6 +307,16 @@ func (s *BuildState) Record(targets []string, prereqs []string, recipeText, fing
 				h, err := cache.Hash(p)
 				if err == nil {
 					ts.DiscoveredInputHashes[p] = h
+				}
+			}
+		}
+		if len(discoveredOutputs) > 0 {
+			ts.DiscoveredOutputs = discoveredOutputs
+			ts.DiscoveredOutputHashes = make(map[string]string, len(discoveredOutputs))
+			for _, p := range discoveredOutputs {
+				h, err := cache.Hash(p)
+				if err == nil {
+					ts.DiscoveredOutputHashes[p] = h
 				}
 			}
 		}

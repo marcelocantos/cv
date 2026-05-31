@@ -27,6 +27,7 @@ func main() {
 		why         = flag.Bool("why", false, "explain why targets are stale")
 		graph       = flag.Bool("graph", false, "print dependency subgraph")
 		showState   = flag.Bool("state", false, "show build database entries")
+		verify      = flag.Bool("verify", false, "error on undeclared reads of in-graph targets (DESIGN.md §11)")
 		complete    = flag.Bool("complete", false, "output completions (targets and configs)")
 		agentsGuide = flag.Bool("help-agent", false, "print the mk agents guide")
 		showVersion = flag.Bool("version", false, "print version and exit")
@@ -58,13 +59,13 @@ func main() {
 		}
 	}
 
-	if err := run(*file, *verbose, *force, *dryRun, *jobs, *why, *graph, *showState, *complete, args); err != nil {
+	if err := run(*file, *verbose, *force, *dryRun, *jobs, *why, *graph, *showState, *complete, *verify, args); err != nil {
 		fmt.Fprintf(os.Stderr, "mk: %s\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(file string, verbose, force, dryRun bool, jobs int, why, graph, showState, complete bool, args []string) error {
+func run(file string, verbose, force, dryRun bool, jobs int, why, graph, showState, complete, verify bool, args []string) error {
 	// Process command-line arguments: targets, configs, and variable overrides
 	vars := mk.NewVars()
 	var buildTargets []string
@@ -187,7 +188,14 @@ func run(file string, verbose, force, dryRun bool, jobs int, why, graph, showSta
 	}
 
 	// Normal build
-	exec := mk.NewExecutorWithConfig(g, state, vars, verbose, force, dryRun, jobs, configSuffix)
+	exec := mk.NewExecutor(g, state, vars, &mk.ExecutorArgs{
+		Verbose:      verbose,
+		Force:        force,
+		DryRun:       dryRun,
+		Verify:       verify,
+		Jobs:         jobs,
+		ConfigSuffix: configSuffix,
+	})
 
 	// Build config requires targets first
 	for _, req := range g.ConfigRequires() {
