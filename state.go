@@ -42,6 +42,14 @@ type TargetState struct {
 	OutputHash      string            `json:"output_hash"`
 	FingerprintHash string            `json:"fingerprint_hash,omitempty"` // hash of fingerprint command output
 	Prereqs         []string          `json:"prereqs"`
+
+	// Discovered prerequisites — soft edges learned from the recipe's
+	// actual reads (e.g., a depfile). Tracked only for staleness, never
+	// for scheduling: a vanished member counts as "changed" rather than
+	// "missing input," and the set is wholesale-replaced on each
+	// successful run. See DESIGN.md §11.
+	DiscoveredPrereqs     []string          `json:"discovered_prereqs,omitempty"`
+	DiscoveredInputHashes map[string]string `json:"discovered_input_hashes,omitempty"`
 }
 
 func LoadState(configSuffix string) *BuildState {
@@ -136,9 +144,34 @@ func (s *BuildState) IsStale(targets []string, prereqs []string, recipeText, fin
 					return true
 				}
 			}
+
+			// Check discovered prerequisites (DESIGN.md §11). A discovered
+			// path that has vanished counts as "changed" — staleness, never
+			// "missing input" — and triggers a rebuild that records a fresh
+			// set without the vanished file. Self-healing.
+			if discoveredStale(ts, cache) {
+				return true
+			}
 		}
 	}
 
+	return false
+}
+
+// discoveredStale returns true if any recorded discovered prerequisite has
+// vanished or changed content. The recorded set is the floor of what the
+// recipe last actually read; we never schedule on it, only invalidate.
+func discoveredStale(ts *TargetState, cache *HashCache) bool {
+	for p, recordedHash := range ts.DiscoveredInputHashes {
+		h, err := cache.Hash(p)
+		if err != nil {
+			// Vanished or unreadable: treat as changed, not as error.
+			return true
+		}
+		if h != recordedHash {
+			return true
+		}
+	}
 	return false
 }
 
@@ -197,6 +230,19 @@ func (s *BuildState) WhyStale(targets []string, prereqs []string, recipeText, fi
 					reasons = append(reasons, fmt.Sprintf("prerequisite %q has changed", p))
 				}
 			}
+
+			// Discovered prerequisites — vanished and changed are both
+			// staleness triggers (DESIGN.md §11).
+			for p, recordedHash := range ts.DiscoveredInputHashes {
+				h, err := cache.Hash(p)
+				if err != nil {
+					reasons = append(reasons, fmt.Sprintf("discovered prerequisite %q is gone", p))
+					continue
+				}
+				if h != recordedHash {
+					reasons = append(reasons, fmt.Sprintf("discovered prerequisite %q has changed", p))
+				}
+			}
 		}
 	}
 
@@ -204,7 +250,12 @@ func (s *BuildState) WhyStale(targets []string, prereqs []string, recipeText, fi
 }
 
 // Record records a successful build for all targets.
-func (s *BuildState) Record(targets []string, prereqs []string, recipeText, fingerprint string, cache *HashCache) {
+//
+// discovered is the set of prerequisites the recipe actually read, learned
+// post-run (e.g., from a depfile). It is recorded wholesale — never unioned
+// with prior state — so the recorded set always reflects the most recent
+// run's actual reads (DESIGN.md §11).
+func (s *BuildState) Record(targets []string, prereqs []string, recipeText, fingerprint string, discovered []string, cache *HashCache) {
 	// Build TargetState objects (I/O: hashing) without holding the lock.
 	states := make(map[string]*TargetState, len(targets))
 	for _, target := range targets {
@@ -217,6 +268,16 @@ func (s *BuildState) Record(targets []string, prereqs []string, recipeText, fing
 			h, err := cache.Hash(p)
 			if err == nil {
 				ts.InputHashes[p] = h
+			}
+		}
+		if len(discovered) > 0 {
+			ts.DiscoveredPrereqs = discovered
+			ts.DiscoveredInputHashes = make(map[string]string, len(discovered))
+			for _, p := range discovered {
+				h, err := cache.Hash(p)
+				if err == nil {
+					ts.DiscoveredInputHashes[p] = h
+				}
 			}
 		}
 		if fingerprint != "" {

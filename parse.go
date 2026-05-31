@@ -163,7 +163,7 @@ func (p *parser) parseStatement(trimmed string) (Node, error) {
 	}
 
 	// Rule or task
-	if isTask, keep, fingerprint, targets, prereqs, orderOnly, ok := parseRuleHeader(trimmed); ok {
+	if isTask, keep, fingerprint, depsFormat, targets, prereqs, orderOnly, ok := parseRuleHeader(trimmed); ok {
 		recipe := p.parseRecipe()
 		return Rule{
 			Targets:          targets,
@@ -173,6 +173,7 @@ func (p *parser) parseStatement(trimmed string) (Node, error) {
 			IsTask:           isTask,
 			Keep:             keep,
 			Fingerprint:      fingerprint,
+			DepsFormat:       depsFormat,
 			Line:             lineNum,
 		}, nil
 	}
@@ -419,7 +420,7 @@ func parseAppend(line string) (string, string, bool) {
 	return "", "", false
 }
 
-func parseRuleHeader(line string) (isTask, keep bool, fingerprint string, targets, prereqs, orderOnlyPrereqs []string, ok bool) {
+func parseRuleHeader(line string) (isTask, keep bool, fingerprint, depsFormat string, targets, prereqs, orderOnlyPrereqs []string, ok bool) {
 	if strings.HasPrefix(line, "!") {
 		isTask = true
 		line = line[1:]
@@ -443,14 +444,14 @@ func parseRuleHeader(line string) (isTask, keep bool, fingerprint string, target
 	}
 found:
 	if colonIdx < 0 {
-		return false, false, "", nil, nil, nil, false
+		return false, false, "", "", nil, nil, nil, false
 	}
 
 	targetStr := strings.TrimSpace(line[:colonIdx])
 	prereqStr := strings.TrimSpace(line[colonIdx+1:])
 
 	if targetStr == "" {
-		return false, false, "", nil, nil, nil, false
+		return false, false, "", "", nil, nil, nil, false
 	}
 
 	// Extract [fingerprint: ...] annotation
@@ -458,6 +459,15 @@ found:
 		end := strings.Index(targetStr[idx:], "]")
 		if end >= 0 {
 			fingerprint = strings.TrimSpace(targetStr[idx+len("[fingerprint:") : idx+end])
+			targetStr = strings.TrimSpace(targetStr[:idx] + targetStr[idx+end+1:])
+		}
+	}
+
+	// Extract [deps: <format>] annotation
+	if idx := strings.Index(targetStr, "[deps:"); idx >= 0 {
+		end := strings.Index(targetStr[idx:], "]")
+		if end >= 0 {
+			depsFormat = strings.TrimSpace(targetStr[idx+len("[deps:") : idx+end])
 			targetStr = strings.TrimSpace(targetStr[:idx] + targetStr[idx+end+1:])
 		}
 	}
@@ -479,7 +489,7 @@ found:
 		orderOnlyPrereqs = strings.Fields(s)
 	}
 
-	return isTask, keep, fingerprint, targets, prereqs, orderOnlyPrereqs, true
+	return isTask, keep, fingerprint, depsFormat, targets, prereqs, orderOnlyPrereqs, true
 }
 
 func parseInclude(line string, lineNum int) (Node, error) {

@@ -39,6 +39,7 @@ type Rule struct {
 	IsTask           bool   // ! prefix
 	Keep             bool   // [keep] annotation
 	Fingerprint      string // [fingerprint: command] for non-file artifacts
+	DepsFormat       string // [deps: <format>] — gcc, makefile, etc.
 	Line             int
 }
 

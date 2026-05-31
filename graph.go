@@ -38,6 +38,7 @@ type resolvedRule struct {
 	isTask           bool
 	keep             bool   // [keep] annotation — don't delete on error
 	fingerprint      string // [fingerprint: command] for non-file artifacts
+	depsFormat       string // [deps: <format>] — gcc, makefile, ...
 	stem             string // first capture value from pattern match
 }
 
@@ -80,6 +81,7 @@ type patternRule struct {
 	recipe                  []string
 	keep                    bool
 	fingerprint             string
+	depsFormat              string
 }
 
 // BuildGraph constructs a dependency graph from a parsed file.
@@ -288,7 +290,7 @@ func (g *Graph) addRule(r Rule) error {
 	}
 
 	if isPattern {
-		pr := patternRule{recipe: r.Recipe, keep: r.Keep, fingerprint: r.Fingerprint}
+		pr := patternRule{recipe: r.Recipe, keep: r.Keep, fingerprint: r.Fingerprint, depsFormat: r.DepsFormat}
 		for _, t := range expandedTargets {
 			p, _, err := ParsePattern(t)
 			if err != nil {
@@ -322,6 +324,7 @@ func (g *Graph) addRule(r Rule) error {
 			isTask:           r.IsTask,
 			keep:             r.Keep,
 			fingerprint:      r.Fingerprint,
+			depsFormat:       r.DepsFormat,
 		})
 	}
 
@@ -548,6 +551,7 @@ func (g *Graph) Resolve(target string) (*resolvedRule, error) {
 				merged.recipe = recipe
 				merged.keep = pr.keep
 				merged.fingerprint = fp
+				merged.depsFormat = pr.depsFormat
 				merged.stem = stem
 			}
 

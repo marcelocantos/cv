@@ -17,13 +17,14 @@ import (
 
 // Executor runs build recipes.
 type Executor struct {
-	graph   *Graph
-	state   *BuildState
-	vars    *Vars
-	verbose bool
-	force   bool // -B: unconditional rebuild
-	dryRun  bool // -n: print commands without executing
-	jobs    int  // max concurrent recipes (0 = unlimited)
+	graph        *Graph
+	state        *BuildState
+	vars         *Vars
+	verbose      bool
+	force        bool   // -B: unconditional rebuild
+	dryRun       bool   // -n: print commands without executing
+	jobs         int    // max concurrent recipes (0 = unlimited)
+	configSuffix string // "" or e.g. "debug-asan"; partitions depfile and state paths
 
 	mu       sync.Mutex
 	building map[string]*buildResult // singleflight dedup
@@ -40,6 +41,13 @@ type buildResult struct {
 }
 
 func NewExecutor(graph *Graph, state *BuildState, vars *Vars, verbose, force, dryRun bool, jobs int) *Executor {
+	return NewExecutorWithConfig(graph, state, vars, verbose, force, dryRun, jobs, "")
+}
+
+// NewExecutorWithConfig is like NewExecutor but also takes the active config
+// suffix so per-config artefacts (e.g., depfiles) can be partitioned in the
+// same way state.json already is.
+func NewExecutorWithConfig(graph *Graph, state *BuildState, vars *Vars, verbose, force, dryRun bool, jobs int, configSuffix string) *Executor {
 	if jobs < 0 {
 		jobs = runtime.NumCPU()
 	}
@@ -51,16 +59,17 @@ func NewExecutor(graph *Graph, state *BuildState, vars *Vars, verbose, force, dr
 	// jobs == 0: sem stays nil → unlimited concurrency
 
 	return &Executor{
-		graph:    graph,
-		state:    state,
-		vars:     vars,
-		verbose:  verbose,
-		force:    force,
-		dryRun:   dryRun,
-		jobs:     jobs,
-		building: make(map[string]*buildResult),
-		sem:      sem,
-		cache:    NewHashCache(),
+		graph:        graph,
+		state:        state,
+		vars:         vars,
+		verbose:      verbose,
+		force:        force,
+		dryRun:       dryRun,
+		jobs:         jobs,
+		configSuffix: configSuffix,
+		building:     make(map[string]*buildResult),
+		sem:          sem,
+		cache:        NewHashCache(),
 	}
 }
 
@@ -159,6 +168,17 @@ func (e *Executor) executeRecipe(rule *resolvedRule, recipeText, fingerprint str
 		}
 	}
 
+	// Allocate and prepare the depfile directory if this rule discovers deps.
+	depfilePath := e.depfilePathFor(rule)
+	if depfilePath != "" && !e.dryRun {
+		if err := os.MkdirAll(filepath.Dir(depfilePath), 0o755); err != nil {
+			return fmt.Errorf("creating depfile dir: %w", err)
+		}
+		// Remove any stale depfile from a prior aborted run; the recipe will
+		// recreate it.
+		_ = os.Remove(depfilePath)
+	}
+
 	// Build banner
 	var banner strings.Builder
 	fmt.Fprintf(&banner, "mk: building %q\n", rule.target)
@@ -221,12 +241,75 @@ func (e *Executor) executeRecipe(rule *resolvedRule, recipeText, fingerprint str
 		return fmt.Errorf("recipe for %q failed: %w", rule.target, err)
 	}
 
+	// Fold discovered prerequisites from the depfile (DESIGN.md §11). Soft
+	// edges are invalidation-only: they go into the state record and into
+	// IsStale, but never into scheduling.
+	var discovered []string
+	if depfilePath != "" {
+		paths, derr := ParseDepfile(depfilePath, rule.depsFormat)
+		if derr != nil {
+			return fmt.Errorf("parsing depfile %q for %q: %w", depfilePath, rule.target, derr)
+		}
+		discovered = filterDiscovered(paths, rule)
+		// mk owns the depfile; remove it after folding into the DB.
+		_ = os.Remove(depfilePath)
+	}
+
 	// Record successful build for all outputs
 	if !rule.isTask {
-		e.state.Record(rule.targets, rule.prereqs, recipeText, fingerprint, e.cache)
+		e.state.Record(rule.targets, rule.prereqs, recipeText, fingerprint, discovered, e.cache)
 	}
 
 	return nil
+}
+
+// depfilePathFor returns the path mk allocates for this rule's depfile, or
+// "" if the rule has no [deps: …] annotation. The path mirrors the target
+// name under .mk/deps/[config/] so it is inspectable when debugging.
+func (e *Executor) depfilePathFor(rule *resolvedRule) string {
+	if rule.depsFormat == "" || rule.isTask {
+		return ""
+	}
+	// Use the primary target name; for multi-output rules all outputs share
+	// the same recipe and therefore the same depfile.
+	base := filepath.Clean(rule.target)
+	// Defensive: refuse paths that would escape .mk/deps via .. or absolute
+	// paths. Fall back to a flattened name in that case.
+	if filepath.IsAbs(base) || strings.HasPrefix(base, "..") {
+		base = strings.ReplaceAll(strings.ReplaceAll(base, string(filepath.Separator), "_"), "..", "_")
+	}
+	parts := []string{stateDir, "deps"}
+	if e.configSuffix != "" {
+		parts = append(parts, e.configSuffix)
+	}
+	parts = append(parts, base+".d")
+	return filepath.Join(parts...)
+}
+
+// filterDiscovered drops paths that are already declared prereqs (declared
+// edges are hard and tracked separately) and the rule's own outputs.
+func filterDiscovered(paths []string, rule *resolvedRule) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	declared := make(map[string]bool, len(rule.prereqs)+len(rule.orderOnlyPrereqs)+len(rule.targets))
+	for _, p := range rule.prereqs {
+		declared[filepath.Clean(p)] = true
+	}
+	for _, p := range rule.orderOnlyPrereqs {
+		declared[filepath.Clean(p)] = true
+	}
+	for _, t := range rule.targets {
+		declared[filepath.Clean(t)] = true
+	}
+	out := paths[:0]
+	for _, p := range paths {
+		if declared[p] {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func (e *Executor) expandFingerprint(rule *resolvedRule) string {
@@ -256,6 +339,13 @@ func (e *Executor) expandRecipe(rule *resolvedRule) string {
 	// Set stem if available from pattern match
 	if rule.stem != "" {
 		vars.Set("stem", rule.stem)
+	}
+
+	// $depfile — set when the rule has a [deps: …] annotation so the recipe
+	// can hand the path to its compiler (e.g., gcc -MF $depfile). The path
+	// is partitioned by config to match the state file (DESIGN.md §11).
+	if depfile := e.depfilePathFor(rule); depfile != "" {
+		vars.Set("depfile", depfile)
 	}
 
 	// Find changed prerequisites (only normal prereqs)

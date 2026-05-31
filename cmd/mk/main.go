@@ -187,7 +187,7 @@ func run(file string, verbose, force, dryRun bool, jobs int, why, graph, showSta
 	}
 
 	// Normal build
-	exec := mk.NewExecutor(g, state, vars, verbose, force, dryRun, jobs)
+	exec := mk.NewExecutorWithConfig(g, state, vars, verbose, force, dryRun, jobs, configSuffix)
 
 	// Build config requires targets first
 	for _, req := range g.ConfigRequires() {
