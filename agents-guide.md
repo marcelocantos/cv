@@ -87,6 +87,7 @@ Available in recipes:
 | `$stem` | Matched stem (single-capture shorthand) |
 | `$target.dir` | Directory part of target |
 | `$target.file` | Filename part of target |
+| `$depfile` | Per-target depfile path; set only when the rule has `[deps: …]`. Hand it to the compiler (e.g., `cc -MMD -MF $depfile`); mk parses it after the recipe and folds the discovered reads into the build database. |
 
 Order-only prerequisites (after `|`) are excluded from `$input`, `$inputs`,
 `$changed`.
@@ -139,6 +140,40 @@ build/data.db [keep]: schema.sql       # don't delete on error
 db/schema [fingerprint: ./version]:    # custom staleness check
     migrate up
 ```
+
+#### Discovered dependencies (DESIGN.md §11)
+
+mk replaces Make's `-include *.d` / `-MP` ritual with first-class
+support for dependencies a recipe only reveals at run time. Two edge
+kinds: **hard** (declared, ordering + staleness) and **soft**
+(discovered, staleness only — a vanished discovered dep is "changed,"
+not "missing"). Recorded discovered set is replaced wholesale on each
+successful run.
+
+| Annotation | Meaning |
+|---|---|
+| `[deps: gcc\|makefile\|msvc\|json\|lines]` | Recipe writes a depfile to `$depfile`; mk parses it post-run and folds the reads into the build DB. |
+| `[deps: trace]` | mk runs the recipe under `strace` (Linux only; macOS returns a clear "not yet implemented" error) and records observed reads. |
+| `[scan: <cmd>]` | Cheap pre-pass that emits depfile-format output on stdout. In-graph paths it discovers are built before the heavy recipe runs. |
+| `[scan-format: <fmt>]` | Format the scan command emits. Defaults to `gcc`. |
+| `[writes: manifest <path>]` | Recipe writes a newline-separated list of dynamic outputs; mk fingerprints them. |
+| `[writes: trace]` | mk records observed writes (Linux only). |
+| `[reads: <glob>…]` | Declared envelope; discovered reads outside the globs are flagged (warn / error under `--verify`). |
+
+```
+build/{name}.o [deps: gcc]: src/{name}.c
+    $cc $cflags -MMD -MF $depfile -c $input -o $target
+
+gen/.stamp [writes: manifest gen/.manifest]: schema.idl
+    idlc --emit-manifest gen/.manifest $input
+    touch $target
+
+main.o [deps: gcc] [reads: src/** include/**]: main.c
+    $cc -MMD -MF $depfile -c $input -o $target
+```
+
+`include std/c.mk` carries `[deps: gcc]` already, so C/C++ projects
+get correct, self-healing header tracking with no ritual visible.
 
 ## Pattern rules
 
@@ -351,6 +386,7 @@ mk [flags] [target...] [var=value...]
 | `--why` | Explain why targets are stale |
 | `--graph` | Print dependency subgraph (DOT) |
 | `--state` | Show build database entries |
+| `--verify` | Error on undeclared reads of in-graph targets and on envelope violations (DESIGN.md §11) |
 
 Default target: first non-task rule. Targets and `var=value` can be
 intermixed.

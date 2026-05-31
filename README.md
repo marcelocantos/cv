@@ -70,6 +70,7 @@ hashes, not timestamps.
 | `%` patterns | `{name}` named captures |
 | `.DELETE_ON_ERROR` | Default behaviour |
 | `.ONESHELL` | Default behaviour |
+| `-include *.d` / `-MP` ritual | `[deps: gcc]` annotation; deleted headers self-heal |
 
 ## Mini tutorial
 
@@ -143,6 +144,23 @@ $ mk --graph build/app   # print dependency graph (DOT format)
 $ mk -n test             # dry run
 ```
 
+### Discovered dependencies (no `-MMD` ritual)
+
+`include std/c.mk` gets correct header tracking with no `-include *.d`
+and no `-MP` ceremony. The standard library annotates the compile rule
+with `[deps: gcc]`; mk hands the compiler a depfile path in `$depfile`,
+reads it after each compile, folds the discovered prereqs into the
+content-hashed build database, then deletes the depfile. Deleted
+headers self-heal — a missing recorded header is "changed," not
+"missing input," so the very rebuild it triggers also drops the stale
+edge.
+
+For tools without a depfile, an `[scan: <cmd>]` pre-pass or
+`[deps: trace]` (Linux only, via strace) provides the same model. See
+[DESIGN.md §11](DESIGN.md#11-discovered-dependencies) for the full
+semantics, [`docs/discovered-dependencies.md`](docs/discovered-dependencies.md)
+for the rationale and prior art.
+
 ## Flags
 
 | Flag | Meaning |
@@ -155,6 +173,7 @@ $ mk -n test             # dry run
 | `--why` | Explain staleness |
 | `--graph` | Print dependency subgraph |
 | `--state` | Show build database entries |
+| `--verify` | Error on undeclared reads of in-graph targets (DESIGN.md §11) |
 
 ## License
 
