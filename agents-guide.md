@@ -1,4 +1,4 @@
-# mk agents guide
+# cv agents guide
 
 Dense reference for AI coding agents. See [DESIGN.md](DESIGN.md) for full
 specification, [README.md](README.md) for human-oriented overview.
@@ -22,12 +22,12 @@ build/{name}.o: src/{name}.c
     ./$input --self-test
 
 !clean:
-    rm -rf build/ .mk/
+    rm -rf build/ .cv/
 ```
 
 ## File name
 
-The default build file is `mkfile` (no extension). Override with `mk -f FILE`.
+The default build file is `cvfile` (no extension). Override with `cv -f FILE`.
 
 ## Variables
 
@@ -68,10 +68,10 @@ Works on any variable: `$src.dir`, `$src.file`.
 
 All variables are exported to recipes automatically. No `export` keyword.
 
-Priority: CLI args > mkfile > inherited environment.
+Priority: CLI args > cvfile > inherited environment.
 
 ```
-mk cc=clang test       # overrides cc for this invocation
+cv cc=clang test       # overrides cc for this invocation
 ```
 
 ## Automatic variables
@@ -87,7 +87,7 @@ Available in recipes:
 | `$stem` | Matched stem (single-capture shorthand) |
 | `$target.dir` | Directory part of target |
 | `$target.file` | Filename part of target |
-| `$depfile` | Per-target depfile path; set only when the rule has `[deps: …]`. Hand it to the compiler (e.g., `cc -MMD -MF $depfile`); mk parses it after the recipe and folds the discovered reads into the build database. |
+| `$depfile` | Per-target depfile path; set only when the rule has `[deps: …]`. Hand it to the compiler (e.g., `cc -MMD -MF $depfile`); cv parses it after the recipe and folds the discovered reads into the build database. |
 
 Order-only prerequisites (after `|`) are excluded from `$input`, `$inputs`,
 `$changed`.
@@ -143,7 +143,7 @@ db/schema [fingerprint: ./version]:    # custom staleness check
 
 #### Discovered dependencies (DESIGN.md §11)
 
-mk replaces Make's `-include *.d` / `-MP` ritual with first-class
+cv replaces Make's `-include *.d` / `-MP` ritual with first-class
 support for dependencies a recipe only reveals at run time. Two edge
 kinds: **hard** (declared, ordering + staleness) and **soft**
 (discovered, staleness only — a vanished discovered dep is "changed,"
@@ -152,12 +152,12 @@ successful run.
 
 | Annotation | Meaning |
 |---|---|
-| `[deps: gcc\|makefile\|msvc\|json\|lines]` | Recipe writes a depfile to `$depfile`; mk parses it post-run and folds the reads into the build DB. |
-| `[deps: trace]` | mk runs the recipe under `strace` (Linux only; macOS returns a clear "not yet implemented" error) and records observed reads. |
+| `[deps: gcc\|makefile\|msvc\|json\|lines]` | Recipe writes a depfile to `$depfile`; cv parses it post-run and folds the reads into the build DB. |
+| `[deps: trace]` | cv runs the recipe under `strace` (Linux only; macOS returns a clear "not yet implemented" error) and records observed reads. |
 | `[scan: <cmd>]` | Cheap pre-pass that emits depfile-format output on stdout. In-graph paths it discovers are built before the heavy recipe runs. |
 | `[scan-format: <fmt>]` | Format the scan command emits. Defaults to `gcc`. |
-| `[writes: manifest <path>]` | Recipe writes a newline-separated list of dynamic outputs; mk fingerprints them. |
-| `[writes: trace]` | mk records observed writes (Linux only). |
+| `[writes: manifest <path>]` | Recipe writes a newline-separated list of dynamic outputs; cv fingerprints them. |
+| `[writes: trace]` | cv records observed writes (Linux only). |
 | `[reads: <glob>…]` | Declared envelope; discovered reads outside the globs are flagged (warn / error under `--verify`). |
 
 ```
@@ -172,7 +172,7 @@ main.o [deps: gcc] [reads: src/** include/**]: main.c
     $cc -MMD -MF $depfile -c $input -o $target
 ```
 
-`include std/c.mk` carries `[deps: gcc]` already, so C/C++ projects
+`include std/c.cv` carries `[deps: gcc]` already, so C/C++ projects
 get correct, self-healing header tracking with no ritual visible.
 
 ## Pattern rules
@@ -221,7 +221,7 @@ recipe:
 
 ```
 !clean:
-    rm -rf build/ .mk/
+    rm -rf build/ .cv/
 
 !test: build/app
     ./$input --self-test
@@ -249,7 +249,7 @@ config asan:
     ldflags += -fsanitize=address
 ```
 
-Usage: `mk test:debug`, `mk test:debug+asan`. Configs compose left-to-right
+Usage: `cv test:debug`, `cv test:debug+asan`. Configs compose left-to-right
 with `+`. `builddir` auto-appends config names: `build` becomes
 `build-debug-asan`.
 
@@ -320,10 +320,10 @@ Comparisons: `==`, `!=`. Operands expanded before comparison.
 ## Includes
 
 ```
-include common.mk                     # unscoped (paste into current scope)
-include lib/mkfile as lib             # scoped (variable/path isolation)
-include {path}/mkfile as {path}       # pattern discovery across directories
-include std/c.mk                      # embedded standard library
+include common.cv                     # unscoped (paste into current scope)
+include lib/cvfile as lib             # scoped (variable/path isolation)
+include {path}/cvfile as {path}       # pattern discovery across directories
+include std/c.cv                      # embedded standard library
 ```
 
 ### Scoped includes
@@ -340,14 +340,14 @@ All variables use `?=` (overridable before include).
 
 | File | Provides |
 |------|----------|
-| `std/c.mk` | `cc`, `cflags`, `ldflags`, `ar`, `{name}.o: {name}.c` pattern |
-| `std/cxx.mk` | `cxx`, `cxxflags`, `ldflags`, `{name}.o: {name}.cc` pattern |
-| `std/go.mk` | `go`, `goflags`, `!build`, `!test`, `!vet` tasks |
+| `std/c.cv` | `cc`, `cflags`, `ldflags`, `ar`, `{name}.o: {name}.c` pattern |
+| `std/cxx.cv` | `cxx`, `cxxflags`, `ldflags`, `{name}.o: {name}.cc` pattern |
+| `std/go.cv` | `go`, `goflags`, `!build`, `!test`, `!vet` tasks |
 
 ## Shell interop
 
 `$(...)` in recipes is **always** shell command substitution — never
-interpreted by mk. No `$$` escaping needed:
+interpreted by cv. No `$$` escaping needed:
 
 ```
 build/app: $obj
@@ -355,12 +355,12 @@ build/app: $obj
     $cxx -DCOMMIT="\"$commit\"" -o $target $inputs
 ```
 
-`$cxx`, `$target`, `$inputs` = mk variables (expanded first).
+`$cxx`, `$target`, `$inputs` = cv variables (expanded first).
 `$(git ...)` = shell substitution (passed through verbatim).
 
 ## Build database
 
-Stored in `.mk/`. Target is stale if any of:
+Stored in `.cv/`. Target is stale if any of:
 - No previous build recorded
 - Recipe text changed (after variable expansion)
 - Prerequisite set changed (additions or deletions)
@@ -373,12 +373,12 @@ as `stat()`.
 ## CLI
 
 ```
-mk [flags] [target...] [var=value...]
+cv [flags] [target...] [var=value...]
 ```
 
 | Flag | Effect |
 |------|--------|
-| `-f FILE` | Read FILE instead of `mkfile` |
+| `-f FILE` | Read FILE instead of `cvfile` |
 | `-j N` | Parallel jobs (`-1`=auto, `0`=all cores) |
 | `-v` | Verbose |
 | `-n` | Dry run |
@@ -395,17 +395,17 @@ intermixed.
 
 | Sigil | Meaning | Interpreted by |
 |-------|---------|---------------|
-| `$name` / `${name}` | Variable | mk |
-| `$[func args]` | Function call | mk |
+| `$name` / `${name}` | Variable | cv |
+| `$[func args]` | Function call | cv |
 | `$(...)` | Command substitution | Shell (passthrough) |
-| `$$` | Literal `$` | mk |
+| `$$` | Literal `$` | cv |
 
 ## Common patterns
 
 ### C project
 
 ```
-include std/c.mk
+include std/c.cv
 cc = clang
 cflags = -Wall -O2
 
@@ -419,13 +419,13 @@ build/app: $[addprefix build/,$obj]
     $cc $ldflags -o $target $inputs
 
 !clean:
-    rm -rf build/ .mk/
+    rm -rf build/ .cv/
 ```
 
 ### Go project
 
 ```
-include std/go.mk
+include std/go.cv
 
 !fmt:
     $go fmt ./...
@@ -434,23 +434,23 @@ include std/go.mk
     rm -f myapp
 ```
 
-`std/go.mk` provides `!build`, `!test`, `!vet`.
+`std/go.cv` provides `!build`, `!test`, `!vet`.
 
 ### Multi-directory project
 
 ```
-# root mkfile
+# root cvfile
 cc = clang
 cflags = -Wall -O2
 
-include {path}/mkfile as {path}
+include {path}/cvfile as {path}
 
 build/app: lib/build/libfoo.a app/build/main.o
     $cc -o $target $inputs
 ```
 
 ```
-# lib/mkfile — inherits $cc, $cflags from parent
+# lib/cvfile — inherits $cc, $cflags from parent
 src = foo.c bar.c
 obj = $[patsubst %.c,build/%.o,$src]
 
@@ -464,7 +464,7 @@ build/{name}.o: {name}.c
 ### Multi-config project
 
 ```
-include std/cxx.mk
+include std/cxx.cv
 cxx = c++ -std=c++17
 builddir = build
 
@@ -491,13 +491,13 @@ $builddir/app: $builddir/main.o $builddir/lib.o
 ```
 
 ```
-mk test:debug+asan     # compose configs
-mk bench:release -j0   # all cores
+cv test:debug+asan     # compose configs
+cv bench:release -j0   # all cores
 ```
 
 ## Key differences from Make
 
-| Make | mk |
+| Make | cv |
 |------|-----|
 | Tabs required | Any whitespace |
 | `$@`, `$<`, `$^` | `$target`, `$input`, `$inputs` |
@@ -505,7 +505,7 @@ mk bench:release -j0   # all cores
 | `$$` in recipes | Not needed |
 | `.PHONY: clean` | `!clean:` |
 | Timestamp-based | Content hash-based |
-| Implicit rules | `include std/c.mk` (opt-in) |
+| Implicit rules | `include std/c.cv` (opt-in) |
 | `%` | `{name}` (named, multiple captures) |
 | `.DELETE_ON_ERROR` | Default |
 | `.ONESHELL` | Default |

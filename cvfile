@@ -1,7 +1,7 @@
-include std/go.mk
+include std/go.cv
 
 !fmt:
     $go fmt ./...
 
 !clean:
-    rm -f mk
+    rm -f cv

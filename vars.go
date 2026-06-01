@@ -1,7 +1,7 @@
-// Copyright 2026 The mk Authors
+// Copyright 2026 The cv Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package mk
+package cv
 
 import (
 	"os"
@@ -76,7 +76,7 @@ func (v *Vars) Get(name string) string {
 // $name expands to the value of name.
 // ${name} also works for delimiting.
 // $name.dir / $name.file — path property access.
-// $[func args] — built-in mk functions.
+// $[func args] — built-in cv functions.
 // $$ expands to a literal $.
 func (v *Vars) Expand(s string) string {
 	var b strings.Builder
@@ -113,7 +113,7 @@ func (v *Vars) Expand(s string) string {
 			}
 
 		case s[i] == '[':
-			// $[func args] — mk built-in functions
+			// $[func args] — cv built-in functions
 			end := findMatchingBracket(s[i:])
 			if end < 0 {
 				b.WriteByte('$')

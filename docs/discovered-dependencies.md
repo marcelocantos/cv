@@ -5,7 +5,7 @@ DESIGN.md; this doc carries the longer-form *why* — motivation,
 mechanism comparison, prior art, and non-goals — that the spec
 references.
 
-The feature makes dependency discovery a first-class part of mk's
+The feature makes dependency discovery a first-class part of cv's
 model, superseding the Make pastiche of `clang -MMD`, `-include *.d`,
 and `-MP` empty-target hacks.
 
@@ -53,7 +53,7 @@ Every dependency edge is one of two kinds.
 
 | Edge | Source | Constrains | Required to exist? |
 |---|---|---|---|
-| **Hard** | Declared in the mkfile (`a: b`) | Ordering **and** staleness | Yes — it is an ordering constraint |
+| **Hard** | Declared in the cvfile (`a: b`) | Ordering **and** staleness | Yes — it is an ordering constraint |
 | **Soft** | Discovered by running the recipe | Staleness only | No — absence is just "changed" |
 
 A hard edge is a promise about build *order*: `b` must be built before
@@ -92,7 +92,7 @@ Relying on "it's committed, so it's present" is an active trap: a
 discover-only build serves a *stale* committed-generated file whenever
 that file's inputs changed. The structural rule is what makes it sound.
 
-Because mk knows its own target set, this rule is **enforced, not just
+Because cv knows its own target set, this rule is **enforced, not just
 advised** (see §7).
 
 ---
@@ -117,7 +117,7 @@ Make never gets right:
 
 The model also gives the right answer in the case people confuse with the
 above: delete `foo.h` but *leave* an `#include` of it, and the rerun's
-compile genuinely fails — mk surfaces that compiler error, because it
+compile genuinely fails — cv surfaces that compiler error, because it
 always defers to the recipe's own exit status rather than pre-judging from
 a stale edge. Deletion-with-dangling-ref is a real error;
 deletion-with-refs-also-removed self-heals. Same mechanism, both correct.
@@ -135,7 +135,7 @@ Run the recipe, learn what it touched, record it. This needs no analysis
 pass and is the default for everything.
 
 **Depfile adapter** — generalizes `-MMD`. The recipe emits a dependency
-list as a byproduct; mk parses it, normalizes to project-relative paths,
+list as a byproduct; cv parses it, normalizes to project-relative paths,
 folds it into the build database (§5), and discards the file:
 
 ```
@@ -143,11 +143,11 @@ build/{name}.o [deps: gcc]: src/{name}.c
     $cc $cflags -MMD -MF $depfile -c $input -o $target
 ```
 
-`[deps: <format>]` names a parser; `$depfile` expands to a path mk
-allocates under `.mk/`. Supported formats: `gcc`/`makefile` (Makefile
+`[deps: <format>]` names a parser; `$depfile` expands to a path cv
+allocates under `.cv/`. Supported formats: `gcc`/`makefile` (Makefile
 depfile syntax), `msvc` (`/showIncludes`), `json` (array of paths),
 `lines` (newline- or NUL-separated). This is strictly better than
-`-include`: mk owns the parse, folds into a content-hashed DB instead of
+`-include`: cv owns the parse, folds into a content-hashed DB instead of
 replaying stale rules, and the file never enters the source tree. It is
 also exactly what Ninja's `deps = gcc` does — the closest mainstream prior
 art — with content hashing added on top.
@@ -160,7 +160,7 @@ build/{name}.o [deps: trace]: src/{name}.c
     $cc $cflags -c $input -o $target
 ```
 
-mk runs the recipe under observation (macOS: sandbox profile / `fs_usage`
+cv runs the recipe under observation (macOS: sandbox profile / `fs_usage`
 / `DYLD` interpose; Linux: seccomp-bpf, ptrace, or `fanotify`) and records
 every path opened for read. Works for any tool — protoc, sass, bundlers,
 codegen — not just compilers. This is tup/Bazel territory; it is
@@ -202,7 +202,7 @@ free:
 
 **The previous build's recorded soft-edges *are* the analysis pass.** On
 an incremental build, last build's discovered set is an
-exact-as-of-last-build approximation of the dependency shape. mk schedules
+exact-as-of-last-build approximation of the dependency shape. cv schedules
 using it, executes, and re-records. This is safe even when the shape has
 drifted, because **correctness comes from the post-hoc content-hash check
 plus the wholesale re-record, never from the schedule.** Scheduling on a
@@ -219,7 +219,7 @@ genuinely pays — not the engine's spine.
 
 ## 5. Build database representation
 
-The build database (`.mk/`, see DESIGN.md §7) already stores, per target,
+The build database (`.cv/`, see DESIGN.md §7) already stores, per target,
 the declared prerequisite set, expanded recipe text, and per-input content
 fingerprints. Discovered dependencies add:
 
@@ -237,8 +237,8 @@ Everything is **partitioned by config** exactly as the existing database
 is — `build-debug-asan` and `build-release` keep independent discovered
 sets, because a compile under `-DDEBUG` may include different headers.
 
-No `.d` files, no `-include` glob, no `-MP`. `mk clean` removes the
-discovered sets with everything else under `.mk/`.
+No `.d` files, no `-include` glob, no `-MP`. `cv clean` removes the
+discovered sets with everything else under `.cv/`.
 
 ---
 
@@ -254,8 +254,8 @@ gen/ [writes: manifest gen/.manifest]: schema.idl
 ```
 
 `[writes: manifest <path>]` reads a producer-emitted list of outputs;
-`[writes: trace]` observes them. mk records the discovered output set and
-fingerprints each, so downstream consumers and `mk clean` see the real
+`[writes: trace]` observes them. cv records the discovered output set and
+fingerprints each, so downstream consumers and `cv clean` see the real
 artefacts. This closes the model: discovery is symmetric across inputs and
 outputs.
 
@@ -263,14 +263,14 @@ outputs.
 
 ## 7. Verification (hermetic mode)
 
-Under trace, mk knows the *complete* read/write set, so it can assert the
+Under trace, cv knows the *complete* read/write set, so it can assert the
 build is correctly specified — something Make cannot do at all:
 
 ```
-mk --verify        # or per-target [verify] annotation
+cv --verify        # or per-target [verify] annotation
 ```
 
-mk flags:
+cv flags:
 
 - **Undeclared reads of an in-graph target** — a recipe read a path *this
   build also produces* but did not declare it as a prerequisite. This is
@@ -281,7 +281,7 @@ mk flags:
   set; graph pollution.
 - **Reads outside a declared envelope** — see below.
 
-Because mk knows its own target set, the in-graph-read check needs no
+Because cv knows its own target set, the in-graph-read check needs no
 configuration: any discovered read whose path matches a known target or
 pattern is either auto-promoted to a hard edge or reported, per policy.
 
@@ -312,22 +312,22 @@ use multiple brackets.
 
 | Annotation | Meaning |
 |---|---|
-| `[deps: gcc\|makefile\|msvc\|json\|lines]` | Recipe emits a depfile at `$depfile`; mk folds it post-run |
-| `[deps: trace]` | mk observes the recipe's read-set |
+| `[deps: gcc\|makefile\|msvc\|json\|lines]` | Recipe emits a depfile at `$depfile`; cv folds it post-run |
+| `[deps: trace]` | cv observes the recipe's read-set |
 | `[scan: <cmd>]` | Separate cheap node producing schedulable edges before the recipe |
 | `[scan-format: <fmt>]` | Format of `[scan]` output (default `gcc`) |
 | `[writes: manifest <path>]` | Recipe emits a list of its outputs |
-| `[writes: trace]` | mk observes the recipe's write-set |
+| `[writes: trace]` | cv observes the recipe's write-set |
 | `[reads: <glob>…]` | Declared read envelope (a static bound) |
 | `[verify]` | Force hermetic verification for this target |
 
-New recipe variable: `$depfile` — the path mk allocates under
-`.mk/deps/` for this target's depfile, set only when the rule has a
+New recipe variable: `$depfile` — the path cv allocates under
+`.cv/deps/` for this target's depfile, set only when the rule has a
 `[deps: …]` annotation. Sits alongside `$target`, `$input`, `$inputs`,
 `$stem`, and `$changed`.
 
-`std/c.mk` and `std/cxx.mk` carry the `[deps: gcc]` annotation, so a
-project that does `include std/c.mk` gets correct, self-healing header
+`std/c.cv` and `std/cxx.cv` carry the `[deps: gcc]` annotation, so a
+project that does `include std/c.cv` gets correct, self-healing header
 tracking with no `.d` ritual visible anywhere.
 
 ---
@@ -343,7 +343,7 @@ tracking with no `.d` ritual visible anywhere.
   resolved target, after captures bind.
 - **Scoped includes** — discovered paths are normalized to the global
   graph's coordinate space (the same rebasing applied to declared
-  prerequisites), so a child mkfile's discovered deps merge correctly.
+  prerequisites), so a child cvfile's discovered deps merge correctly.
 
 ---
 
@@ -360,7 +360,7 @@ Explicitly rejected:
 - **Arbitrary graph mutation from recipes.** Discovered edges are
   monotonic and content-addressed, hence safe. Letting recipes rewrite the
   graph at eval time is the road to Make's `$(eval)` / secondary-expansion
-  madness. Graph *queries* (`mk why`, `mk deps`, `mk rdeps`) are welcome;
+  madness. Graph *queries* (`cv why`, `cv deps`, `cv rdeps`) are welcome;
   graph *rewriting* is not.
 
 ---
@@ -377,7 +377,7 @@ Explicitly rejected:
 | Two axes: dynamic deps × scheduler (topological/restarting/suspending) | *Build Systems à la Carte* (Mokhov et al., ICFP 2018) |
 | Bound dynamic fan-out so it stays schedulable | GPU geometry/amplification shaders (`max_vertices`); two-phase = mesh+amplification split |
 
-mk's contribution is synthesis, not invention: Ninja-style depfile folding
+cv's contribution is synthesis, not invention: Ninja-style depfile folding
 *and* tup/Bazel-style tracing behind one `[deps: …]` annotation, on a
 content-hash staleness engine, with the hard/soft edge distinction
 packaged as an enforced authoring rule, and Vesta/redo's

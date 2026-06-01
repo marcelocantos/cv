@@ -1,7 +1,7 @@
-// Copyright 2026 The mk Authors
+// Copyright 2026 The cv Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package mk
+package cv
 
 import (
 	"os"
@@ -77,11 +77,11 @@ func TestParseDepsAnnotation(t *testing.T) {
 }
 
 func TestDepsFormatPropagatesToRule(t *testing.T) {
-	mkfile := `
+	cvfile := `
 build/foo.o [deps: gcc]: src/foo.c
     cc -c $input -o $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,11 +99,11 @@ build/foo.o [deps: gcc]: src/foo.c
 }
 
 func TestDepsFormatPropagatesToPatternRule(t *testing.T) {
-	mkfile := `
+	cvfile := `
 build/{name}.o [deps: gcc]: src/{name}.c
     cc -c $input -o $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,12 +438,12 @@ func TestTraceUnsupportedReturnsClearError(t *testing.T) {
 	chdir(t, dir)
 
 	os.WriteFile("main.c", []byte("int main(){return 0;}\n"), 0o644)
-	os.WriteFile("mkfile", []byte(`
+	os.WriteFile("cvfile", []byte(`
 main.o [deps: trace]: main.c
     cc -c $input -o $target
 `), 0o644)
 
-	g, state, vars := loadGraphAndState(t, "mkfile", "")
+	g, state, vars := loadGraphAndState(t, "cvfile", "")
 	ex := NewExecutor(g, state, vars, &ExecutorArgs{Jobs: 1})
 	err := ex.Build("main.o")
 	if err == nil {
@@ -475,7 +475,7 @@ func TestWritesManifestRecordsOutputs(t *testing.T) {
 	chdir(t, dir)
 
 	os.WriteFile("schema.idl", []byte("a\nb\nc\n"), 0o644)
-	os.WriteFile("mkfile", []byte(`
+	os.WriteFile("cvfile", []byte(`
 gen.stamp [writes: manifest gen.manifest]: schema.idl
     mkdir -p gen
     while read n; do echo "$$n" > gen/"$$n".gen; done < $input
@@ -566,13 +566,13 @@ func TestScanBuildsInGraphDiscoveredDep(t *testing.T) {
 	chdir(t, dir)
 
 	// gen/config.h is in-graph (rule below). main.c includes it.
-	// The scan command discovers it; mk must build gen/config.h before the
+	// The scan command discovers it; cv must build gen/config.h before the
 	// heavy compile runs.
 	os.MkdirAll("gen", 0o755)
 	os.WriteFile("main.c", []byte(`#include "gen/config.h"
 int main(){return V;}
 `), 0o644)
-	os.WriteFile("mkfile", []byte(`
+	os.WriteFile("cvfile", []byte(`
 cc = cc
 
 gen/config.h:
@@ -606,11 +606,11 @@ main.o [scan: $cc -MM -MG -I. $input]: main.c
 // --- T1.3: --verify and undeclared in-graph reads --------------------------
 
 func TestHasRuleForExplicit(t *testing.T) {
-	mkfile := `
+	cvfile := `
 build/foo.o: src/foo.c
     cc -c $input -o $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -627,11 +627,11 @@ build/foo.o: src/foo.c
 }
 
 func TestHasRuleForPattern(t *testing.T) {
-	mkfile := `
+	cvfile := `
 build/{name}.o: src/{name}.c
     cc -c $input -o $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -661,7 +661,7 @@ func TestVerifyDetectsUndeclaredInGraphRead(t *testing.T) {
 	os.WriteFile("main.c", []byte(`#include "gen/config.h"
 int main(){return V;}
 `), 0o644)
-	os.WriteFile("mkfile", []byte(`
+	os.WriteFile("cvfile", []byte(`
 cc = cc
 
 gen/config.h:
@@ -673,7 +673,7 @@ main.o [deps: gcc]: main.c
 
 	// First: build with --verify. main.o reads gen/config.h (in-graph)
 	// without declaring it — the run must fail.
-	g, state, vars := loadGraphAndState(t, "mkfile", "")
+	g, state, vars := loadGraphAndState(t, "cvfile", "")
 	ex := NewExecutor(g, state, vars, &ExecutorArgs{Jobs: 1, Verify: true})
 	err := ex.Build("main.o")
 	if err == nil {
@@ -684,9 +684,9 @@ main.o [deps: gcc]: main.c
 	}
 
 	// Same setup without --verify: build should succeed (warning only).
-	os.RemoveAll(".mk")
+	os.RemoveAll(".cv")
 	os.Remove("main.o")
-	g2, state2, vars2 := loadGraphAndState(t, "mkfile", "")
+	g2, state2, vars2 := loadGraphAndState(t, "cvfile", "")
 	ex2 := NewExecutor(g2, state2, vars2, &ExecutorArgs{Jobs: 1})
 	if err := ex2.Build("main.o"); err != nil {
 		t.Fatalf("expected build to succeed without --verify, got: %v", err)
@@ -706,7 +706,7 @@ func TestEndToEndDiscoveredHeaderDeps(t *testing.T) {
 	os.WriteFile("main.c", []byte(`#include "foo.h"
 int main(){return VALUE;}
 `), 0o644)
-	os.WriteFile("mkfile", []byte(`
+	os.WriteFile("cvfile", []byte(`
 cc = cc
 
 main.o [deps: gcc]: main.c
@@ -725,15 +725,15 @@ main.o [deps: gcc]: main.c
 		t.Fatalf("foo.h not recorded as discovered dep; got %v", sortedKeys(ts.DiscoveredInputHashes))
 	}
 
-	// Depfile under .mk/deps/ should be cleaned up after fold.
-	if _, err := os.Stat(filepath.Join(".mk", "deps", "main.o.d")); !os.IsNotExist(err) {
+	// Depfile under .cv/deps/ should be cleaned up after fold.
+	if _, err := os.Stat(filepath.Join(".cv", "deps", "main.o.d")); !os.IsNotExist(err) {
 		t.Errorf("depfile was not removed after fold: %v", err)
 	}
 
 	// Modify the header. Next build should detect staleness via the
 	// discovered edge and rebuild.
 	os.WriteFile("foo.h", []byte("#define VALUE 42\n"), 0o644)
-	g, st, vars := loadGraphAndState(t, "mkfile", "")
+	g, st, vars := loadGraphAndState(t, "cvfile", "")
 	rule, err := g.Resolve("main.o")
 	if err != nil {
 		t.Fatal(err)
@@ -772,8 +772,8 @@ func TestEndToEndStdCMkAnnotation(t *testing.T) {
 	os.WriteFile("hi.c", []byte(`#include "foo.h"
 int main(){return V;}
 `), 0o644)
-	os.WriteFile("mkfile", []byte(`
-include std/c.mk
+	os.WriteFile("cvfile", []byte(`
+include std/c.cv
 `), 0o644)
 
 	mustBuild(t, "hi.o")
@@ -784,7 +784,7 @@ include std/c.mk
 		t.Fatal("no state for hi.o")
 	}
 	if _, ok := ts.DiscoveredInputHashes["foo.h"]; !ok {
-		t.Errorf("foo.h not picked up via std/c.mk; got %v", sortedKeys(ts.DiscoveredInputHashes))
+		t.Errorf("foo.h not picked up via std/c.cv; got %v", sortedKeys(ts.DiscoveredInputHashes))
 	}
 }
 
@@ -813,7 +813,7 @@ func sortedKeys(m map[string]string) []string {
 
 func mustBuild(t *testing.T, target string) {
 	t.Helper()
-	g, state, vars := loadGraphAndState(t, "mkfile", "")
+	g, state, vars := loadGraphAndState(t, "cvfile", "")
 	ex := NewExecutor(g, state, vars, &ExecutorArgs{Jobs: 1})
 	if err := ex.Build(target); err != nil {
 		t.Fatalf("build %q: %v", target, err)
@@ -823,9 +823,9 @@ func mustBuild(t *testing.T, target string) {
 	}
 }
 
-func loadGraphAndState(t *testing.T, mkfile, configSuffix string) (*Graph, *BuildState, *Vars) {
+func loadGraphAndState(t *testing.T, cvfile, configSuffix string) (*Graph, *BuildState, *Vars) {
 	t.Helper()
-	f, err := os.Open(mkfile)
+	f, err := os.Open(cvfile)
 	if err != nil {
 		t.Fatal(err)
 	}

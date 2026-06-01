@@ -1,14 +1,14 @@
-// Copyright 2026 The mk Authors
+// Copyright 2026 The cv Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package mk
+package cv
 
 // Node is the interface for all AST nodes.
 type Node interface {
 	node()
 }
 
-// File represents a parsed mkfile.
+// File represents a parsed cvfile.
 type File struct {
 	Stmts []Node
 }

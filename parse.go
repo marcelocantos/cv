@@ -1,7 +1,7 @@
-// Copyright 2026 The mk Authors
+// Copyright 2026 The cv Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package mk
+package cv
 
 import (
 	"bufio"
@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// Parse parses an mkfile from a reader.
+// Parse parses an cvfile from a reader.
 func Parse(r io.Reader) (*File, error) {
 	// Read all lines upfront so we can peek/backtrack.
 	var rawLines []string
@@ -497,7 +497,7 @@ found:
 
 	// Extract [writes: <spec>] annotation (e.g. "manifest path/to/manifest"
 	// or "trace"). The recipe produces a set of outputs not known
-	// statically; mk reads them post-run (DESIGN.md §11).
+	// statically; cv reads them post-run (DESIGN.md §11).
 	if idx := strings.Index(targetStr, "[writes:"); idx >= 0 {
 		end := strings.Index(targetStr[idx:], "]")
 		if end >= 0 {

@@ -1,7 +1,7 @@
-// Copyright 2026 The mk Authors
+// Copyright 2026 The cv Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package mk
+package cv
 
 import (
 	"fmt"
@@ -377,7 +377,7 @@ func (g *Graph) evalConditional(c Conditional) error {
 func (g *Graph) evalInclude(inc Include) error {
 	path := g.vars.Expand(inc.Path)
 
-	// Pattern discovery: include {path}/mkfile as {path}
+	// Pattern discovery: include {path}/cvfile as {path}
 	if strings.Contains(path, "{") {
 		return g.evalPatternInclude(path, inc.Alias)
 	}
@@ -633,7 +633,7 @@ func (g *Graph) HasRuleFor(path string) bool {
 
 // PrintGraph prints the dependency subgraph rooted at the given targets as DOT.
 func (g *Graph) PrintGraph(targets []string) error {
-	fmt.Println("digraph mk {")
+	fmt.Println("digraph cv {")
 	fmt.Println("  rankdir=LR;")
 	visited := map[string]bool{}
 	for _, t := range targets {
