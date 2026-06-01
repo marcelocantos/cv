@@ -1,7 +1,7 @@
-// Copyright 2026 The mk Authors
+// Copyright 2026 The cv Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package mk
+package cv
 
 import (
 	"fmt"
@@ -228,7 +228,7 @@ func TestFuncSyntax(t *testing.T) {
 	v := NewVars()
 	v.Set("files", "foo.c bar.h baz.c")
 
-	// $[...] should invoke mk functions
+	// $[...] should invoke cv functions
 	got := v.Expand("$[filter %.c,$files]")
 	if got != "foo.c baz.c" {
 		t.Errorf("$[filter] = %q, want %q", got, "foo.c baz.c")
@@ -343,8 +343,8 @@ func TestEndToEnd(t *testing.T) {
 	os.MkdirAll(srcDir, 0o755)
 	os.WriteFile(filepath.Join(srcDir, "main.c"), []byte(`int main() { return 0; }`), 0o644)
 
-	// Create mkfile
-	mkfile := `
+	// Create cvfile
+	cvfile := `
 cc = cc
 src = src/main.c
 obj = $src:.c=.o
@@ -356,10 +356,10 @@ build/app: $obj
     $cc -o $target $inputs
 
 !clean:
-    rm -rf build/ .mk/
+    rm -rf build/ .cv/
 `
 	// Parse
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,8 +371,8 @@ build/app: $obj
 	os.Chdir(dir)
 	defer os.Chdir(oldDir)
 
-	// Write mkfile to disk for $[wildcard] etc.
-	os.WriteFile(filepath.Join(dir, "mkfile"), []byte(mkfile), 0o644)
+	// Write cvfile to disk for $[wildcard] etc.
+	os.WriteFile(filepath.Join(dir, "cvfile"), []byte(cvfile), 0o644)
 
 	state := &BuildState{Targets: make(map[string]*TargetState)}
 	graph, err := BuildGraph(f, vars, state, nil)
@@ -504,11 +504,11 @@ func TestChangedVariable(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("aaa"), 0o644)
 	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("bbb"), 0o644)
 
-	mkfile := `
+	cvfile := `
 out.txt: a.txt b.txt
     echo $changed > $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -670,12 +670,12 @@ func TestMultiOutputExecution(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "input.txt"), []byte("hello"), 0o644)
 
 	// Recipe creates both outputs
-	mkfile := `
+	cvfile := `
 out1.txt out2.txt: input.txt
     cp $input out1.txt
     cp $input out2.txt
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -744,11 +744,11 @@ func TestOrderOnlyNoRebuild(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "src.txt"), []byte("source"), 0o644)
 	os.WriteFile(filepath.Join(dir, "order.txt"), []byte("order1"), 0o644)
 
-	mkfile := `
+	cvfile := `
 out.txt: src.txt | order.txt
     cat $input > $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -802,11 +802,11 @@ func TestOrderOnlyInputsExclusion(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0o644)
 
 	// order-only prereq should NOT appear in $inputs or $input
-	mkfile := `
+	cvfile := `
 out.txt: a.txt | b.txt
     echo "$inputs" > $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -835,16 +835,16 @@ func TestUnscopedInclude(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(oldDir)
 
-	os.WriteFile(filepath.Join(dir, "common.mk"), []byte("cc = clang\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "common.cv"), []byte("cc = clang\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "src.c"), []byte("int main() { return 0; }"), 0o644)
 
-	mkfile := `
-include common.mk
+	cvfile := `
+include common.cv
 
 build/app: src.c
     $cc -o $target $input
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -861,7 +861,7 @@ build/app: src.c
 		t.Errorf("cc = %q, want %q", got, "clang")
 	}
 
-	// Rule from root mkfile should work
+	// Rule from root cvfile should work
 	rule, err := graph.Resolve("build/app")
 	if err != nil {
 		t.Fatal(err)
@@ -878,7 +878,7 @@ func TestScopedInclude(t *testing.T) {
 	defer os.Chdir(oldDir)
 
 	os.MkdirAll(filepath.Join(dir, "lib"), 0o755)
-	os.WriteFile(filepath.Join(dir, "lib", "mkfile"), []byte(`
+	os.WriteFile(filepath.Join(dir, "lib", "cvfile"), []byte(`
 src = foo.c bar.c
 
 build/libfoo.a: build/foo.o build/bar.o
@@ -887,11 +887,11 @@ build/libfoo.a: build/foo.o build/bar.o
 	os.WriteFile(filepath.Join(dir, "lib", "foo.c"), []byte("void foo() {}"), 0o644)
 	os.WriteFile(filepath.Join(dir, "lib", "bar.c"), []byte("void bar() {}"), 0o644)
 
-	mkfile := `
+	cvfile := `
 cc = gcc
-include lib/mkfile as lib
+include lib/cvfile as lib
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -930,16 +930,16 @@ func TestScopedIncludeInheritance(t *testing.T) {
 	defer os.Chdir(oldDir)
 
 	os.MkdirAll(filepath.Join(dir, "lib"), 0o755)
-	// Child mkfile uses $cc from parent
-	os.WriteFile(filepath.Join(dir, "lib", "mkfile"), []byte(`
+	// Child cvfile uses $cc from parent
+	os.WriteFile(filepath.Join(dir, "lib", "cvfile"), []byte(`
 compiler = $cc
 `), 0o644)
 
-	mkfile := `
+	cvfile := `
 cc = clang
-include lib/mkfile as lib
+include lib/cvfile as lib
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -971,15 +971,15 @@ func TestPatternDiscovery(t *testing.T) {
 	// Create two subdirectories with mkfiles
 	for _, sub := range []string{"lib", "app"} {
 		os.MkdirAll(filepath.Join(dir, sub), 0o755)
-		os.WriteFile(filepath.Join(dir, sub, "mkfile"), []byte(fmt.Sprintf(`
+		os.WriteFile(filepath.Join(dir, sub, "cvfile"), []byte(fmt.Sprintf(`
 name = %s
 `, sub)), 0o644)
 	}
 
-	mkfile := `
-include {path}/mkfile as {path}
+	cvfile := `
+include {path}/cvfile as {path}
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1007,16 +1007,16 @@ func TestScopedIncludePatternRule(t *testing.T) {
 	defer os.Chdir(oldDir)
 
 	os.MkdirAll(filepath.Join(dir, "lib"), 0o755)
-	os.WriteFile(filepath.Join(dir, "lib", "mkfile"), []byte(`
+	os.WriteFile(filepath.Join(dir, "lib", "cvfile"), []byte(`
 build/{name}.o: {name}.c
     gcc -c $input -o $target
 `), 0o644)
 	os.WriteFile(filepath.Join(dir, "lib", "foo.c"), []byte("void foo() {}"), 0o644)
 
-	mkfile := `
-include lib/mkfile as lib
+	cvfile := `
+include lib/cvfile as lib
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1075,7 +1075,7 @@ func TestSiblingCrossReference(t *testing.T) {
 
 	// Create lib/ with a library target
 	os.MkdirAll(filepath.Join(dir, "lib"), 0o755)
-	os.WriteFile(filepath.Join(dir, "lib", "mkfile"), []byte(`
+	os.WriteFile(filepath.Join(dir, "lib", "cvfile"), []byte(`
 build/libfoo.a: foo.o
     ar rcs $target $input
 `), 0o644)
@@ -1083,17 +1083,17 @@ build/libfoo.a: foo.o
 
 	// Create app/ that references ../lib/build/libfoo.a
 	os.MkdirAll(filepath.Join(dir, "app"), 0o755)
-	os.WriteFile(filepath.Join(dir, "app", "mkfile"), []byte(`
+	os.WriteFile(filepath.Join(dir, "app", "cvfile"), []byte(`
 build/app: main.o ../lib/build/libfoo.a
     gcc -o $target $inputs
 `), 0o644)
 	os.WriteFile(filepath.Join(dir, "app", "main.o"), []byte{}, 0o644)
 
-	mkfile := `
-include lib/mkfile as lib
-include app/mkfile as app
+	cvfile := `
+include lib/cvfile as lib
+include app/cvfile as app
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1131,9 +1131,9 @@ func TestNestedScopedInclude(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(oldDir)
 
-	// Create nested structure: lib/core/mkfile included by lib/mkfile
+	// Create nested structure: lib/core/cvfile included by lib/cvfile
 	os.MkdirAll(filepath.Join(dir, "lib", "core"), 0o755)
-	os.WriteFile(filepath.Join(dir, "lib", "core", "mkfile"), []byte(`
+	os.WriteFile(filepath.Join(dir, "lib", "core", "cvfile"), []byte(`
 name = core-impl
 
 build/core.a: core.o
@@ -1141,17 +1141,17 @@ build/core.a: core.o
 `), 0o644)
 	os.WriteFile(filepath.Join(dir, "lib", "core", "core.o"), []byte{}, 0o644)
 
-	os.WriteFile(filepath.Join(dir, "lib", "mkfile"), []byte(`
-include core/mkfile as core
+	os.WriteFile(filepath.Join(dir, "lib", "cvfile"), []byte(`
+include core/cvfile as core
 
 build/libfoo.a: core/build/core.a
     ar rcs $target $input
 `), 0o644)
 
-	mkfile := `
-include lib/mkfile as lib
+	cvfile := `
+include lib/cvfile as lib
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1194,28 +1194,28 @@ func TestNestedPatternDiscovery(t *testing.T) {
 	defer os.Chdir(oldDir)
 
 	// Root discovers lib/ and app/ via pattern
-	// lib/mkfile discovers lib/core/ and lib/util/ via pattern
+	// lib/cvfile discovers lib/core/ and lib/util/ via pattern
 	for _, sub := range []string{"lib/core", "lib/util"} {
 		os.MkdirAll(filepath.Join(dir, sub), 0o755)
 		name := filepath.Base(sub)
-		os.WriteFile(filepath.Join(dir, sub, "mkfile"), []byte(fmt.Sprintf(`
+		os.WriteFile(filepath.Join(dir, sub, "cvfile"), []byte(fmt.Sprintf(`
 name = %s
 `, name)), 0o644)
 	}
 
-	os.WriteFile(filepath.Join(dir, "lib", "mkfile"), []byte(`
-include {path}/mkfile as {path}
+	os.WriteFile(filepath.Join(dir, "lib", "cvfile"), []byte(`
+include {path}/cvfile as {path}
 `), 0o644)
 
 	os.MkdirAll(filepath.Join(dir, "app"), 0o755)
-	os.WriteFile(filepath.Join(dir, "app", "mkfile"), []byte(`
+	os.WriteFile(filepath.Join(dir, "app", "cvfile"), []byte(`
 name = app
 `), 0o644)
 
-	mkfile := `
-include {path}/mkfile as {path}
+	cvfile := `
+include {path}/cvfile as {path}
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1305,14 +1305,14 @@ func TestFingerprintStaleness(t *testing.T) {
 	// Create the initial tarball
 	createTarball(t, dir, "archive.tar.gz", []string{"config.json", "other.txt"})
 
-	// mkfile: extract config.json from tarball, using fingerprint to track
+	// cvfile: extract config.json from tarball, using fingerprint to track
 	// only config.json's content within the archive
-	mkfile := `
+	cvfile := `
 extracted/config.json [fingerprint: tar xf archive.tar.gz -O config.json]: archive.tar.gz
     mkdir -p extracted
     tar xf $input -C extracted/ config.json
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1419,14 +1419,14 @@ func TestParallelIndependent(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0o644)
 
 	// Two independent targets
-	mkfile := `
+	cvfile := `
 out1.txt: a.txt
     cp $input $target
 
 out2.txt: b.txt
     cp $input $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1466,7 +1466,7 @@ func TestParallelDiamond(t *testing.T) {
 
 	// Diamond: top depends on left and right, both depend on root.txt
 	// The recipe for each intermediate writes a unique marker.
-	mkfile := `
+	cvfile := `
 top.txt: left.txt right.txt
     cat $inputs > $target
 
@@ -1476,7 +1476,7 @@ left.txt: root.txt
 right.txt: root.txt
     echo right:$(cat $input) > $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1510,13 +1510,13 @@ func TestParallelMultiOutput(t *testing.T) {
 
 	// Multi-output rule: recipe creates both outputs.
 	// A counter file tracks how many times the recipe runs.
-	mkfile := `
+	cvfile := `
 out1.txt out2.txt: input.txt
     cp $input out1.txt
     cp $input out2.txt
     echo x >> counter.txt
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1554,7 +1554,7 @@ func TestParallelErrorPropagation(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "good.txt"), []byte("good"), 0o644)
 
 	// "bad" target always fails; "good_out" is independent
-	mkfile := `
+	cvfile := `
 bad.txt: good.txt
     exit 1
 
@@ -1564,7 +1564,7 @@ good_out.txt: good.txt
 top.txt: bad.txt
     echo should not run > $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1679,14 +1679,14 @@ func TestUserFuncInRule(t *testing.T) {
 
 	os.WriteFile(filepath.Join(dir, "input.txt"), []byte("hello"), 0o644)
 
-	mkfile := `
+	cvfile := `
 fn upper(file):
     return $file.upper
 
 out.txt: input.txt
     cp $input $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1970,7 +1970,7 @@ func TestConfigPatternRule(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "src"), 0o755)
 	os.WriteFile(filepath.Join(dir, "src", "foo.c"), []byte("int main() {}"), 0o644)
 
-	mkfile := `
+	cvfile := `
 builddir = build
 
 config debug:
@@ -1979,7 +1979,7 @@ config debug:
 $builddir/{name}.o: src/{name}.c
     gcc -c $input -o $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2113,7 +2113,7 @@ func TestLoopRuleGeneration(t *testing.T) {
 
 	os.WriteFile(filepath.Join(dir, "src.c"), []byte("int main() {}"), 0o644)
 
-	mkfile := `
+	cvfile := `
 archs = x86 arm
 
 for arch in $archs:
@@ -2121,7 +2121,7 @@ for arch in $archs:
         echo $arch > $target
 end
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2253,13 +2253,13 @@ func TestPatternPrereqMerge(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "foo.c"), []byte(""), 0o644)
 	os.WriteFile(filepath.Join(dir, "foo.h"), []byte(""), 0o644)
 
-	mkfile := `
+	cvfile := `
 {name}.o: {name}.c
     cc -c $input -o $target
 
 {name}.o: {name}.h
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2291,14 +2291,14 @@ func TestPatternPrereqMerge(t *testing.T) {
 }
 
 func TestPatternAmbiguousRecipeError(t *testing.T) {
-	mkfile := `
+	cvfile := `
 {name}.o: {name}.c
     cc -c $input -o $target
 
 {name}.o: {name}.s
     as $input -o $target
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2335,13 +2335,13 @@ func TestPatternMergeOrderOnly(t *testing.T) {
 
 	os.WriteFile(filepath.Join(dir, "foo.c"), []byte(""), 0o644)
 
-	mkfile := `
+	cvfile := `
 {name}.o: {name}.c
     cc -c $input -o $target
 
 {name}.o: | builddir
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2399,13 +2399,13 @@ func TestStdlibCInclude(t *testing.T) {
 
 	os.WriteFile(filepath.Join(dir, "hello.c"), []byte("int main() { return 0; }"), 0o644)
 
-	mkfile := `
-include std/c.mk
+	cvfile := `
+include std/c.cv
 
 app: hello.o
     $cc $ldflags -o $target $inputs
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2417,12 +2417,12 @@ app: hello.o
 		t.Fatal(err)
 	}
 
-	// cc should be set by std/c.mk
+	// cc should be set by std/c.cv
 	if got := vars.Get("cc"); got != "cc" {
 		t.Errorf("cc = %q, want %q", got, "cc")
 	}
 
-	// Pattern rule from std/c.mk should resolve hello.o
+	// Pattern rule from std/c.cv should resolve hello.o
 	rule, err := graph.Resolve("hello.o")
 	if err != nil {
 		t.Fatal(err)
@@ -2438,8 +2438,8 @@ func TestStdlibCxxInclude(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(oldDir)
 
-	mkfile := `include std/cxx.mk`
-	f, err := Parse(strings.NewReader(mkfile))
+	cvfile := `include std/cxx.cv`
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2462,8 +2462,8 @@ func TestStdlibGoInclude(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(oldDir)
 
-	mkfile := `include std/go.mk`
-	f, err := Parse(strings.NewReader(mkfile))
+	cvfile := `include std/go.cv`
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2500,11 +2500,11 @@ func TestStdlibOverride(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(oldDir)
 
-	mkfile := `
+	cvfile := `
 cc = clang
-include std/c.mk
+include std/c.cv
 `
-	f, err := Parse(strings.NewReader(mkfile))
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2516,9 +2516,9 @@ include std/c.mk
 		t.Fatal(err)
 	}
 
-	// cc should remain clang because std/c.mk uses ?=
+	// cc should remain clang because std/c.cv uses ?=
 	if got := vars.Get("cc"); got != "clang" {
-		t.Errorf("cc = %q, want %q (should not be overridden by std/c.mk)", got, "clang")
+		t.Errorf("cc = %q, want %q (should not be overridden by std/c.cv)", got, "clang")
 	}
 }
 
@@ -2528,12 +2528,12 @@ func TestLocalFileOverridesStdlib(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(oldDir)
 
-	// Create a local std/c.mk that sets cc to something custom
+	// Create a local std/c.cv that sets cc to something custom
 	os.MkdirAll(filepath.Join(dir, "std"), 0o755)
-	os.WriteFile(filepath.Join(dir, "std", "c.mk"), []byte("cc = local-cc\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "std", "c.cv"), []byte("cc = local-cc\n"), 0o644)
 
-	mkfile := `include std/c.mk`
-	f, err := Parse(strings.NewReader(mkfile))
+	cvfile := `include std/c.cv`
+	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
 		t.Fatal(err)
 	}

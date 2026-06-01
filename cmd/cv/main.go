@@ -1,4 +1,4 @@
-// Copyright 2026 The mk Authors
+// Copyright 2026 The cv Authors
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/marcelocantos/mk"
+	"github.com/marcelocantos/cv"
 )
 
 var version = "dev"
@@ -19,7 +19,7 @@ var version = "dev"
 func main() {
 	var (
 		dir         = flag.String("C", "", "change to directory before doing anything")
-		file        = flag.String("f", "mkfile", "mkfile to read")
+		file        = flag.String("f", "cvfile", "cvfile to read")
 		verbose     = flag.Bool("v", false, "verbose output")
 		force       = flag.Bool("B", false, "unconditional rebuild (ignore state)")
 		dryRun      = flag.Bool("n", false, "dry run (print commands without executing)")
@@ -29,7 +29,7 @@ func main() {
 		showState   = flag.Bool("state", false, "show build database entries")
 		verify      = flag.Bool("verify", false, "error on undeclared reads of in-graph targets (DESIGN.md §11)")
 		complete    = flag.Bool("complete", false, "output completions (targets and configs)")
-		agentsGuide = flag.Bool("help-agent", false, "print the mk agents guide")
+		agentsGuide = flag.Bool("help-agent", false, "print the cv agents guide")
 		showVersion = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
@@ -37,37 +37,37 @@ func main() {
 	args := flag.Args()
 
 	if *showVersion {
-		fmt.Println("mk", version)
+		fmt.Println("cv", version)
 		return
 	}
 
 	if *agentsGuide {
 		var buf bytes.Buffer
 		flag.CommandLine.SetOutput(&buf)
-		fmt.Fprintf(&buf, "Usage of mk:\n")
+		fmt.Fprintf(&buf, "Usage of cv:\n")
 		flag.PrintDefaults()
 		flag.CommandLine.SetOutput(os.Stderr)
 		fmt.Print(buf.String())
-		fmt.Print(mk.AgentsGuide)
+		fmt.Print(cv.AgentsGuide)
 		return
 	}
 
 	if *dir != "" {
 		if err := os.Chdir(*dir); err != nil {
-			fmt.Fprintf(os.Stderr, "mk: %s\n", err)
+			fmt.Fprintf(os.Stderr, "cv: %s\n", err)
 			os.Exit(1)
 		}
 	}
 
 	if err := run(*file, *verbose, *force, *dryRun, *jobs, *why, *graph, *showState, *complete, *verify, args); err != nil {
-		fmt.Fprintf(os.Stderr, "mk: %s\n", err)
+		fmt.Fprintf(os.Stderr, "cv: %s\n", err)
 		os.Exit(1)
 	}
 }
 
 func run(file string, verbose, force, dryRun bool, jobs int, why, graph, showState, complete, verify bool, args []string) error {
 	// Process command-line arguments: targets, configs, and variable overrides
-	vars := mk.NewVars()
+	vars := cv.NewVars()
 	var buildTargets []string
 	var activeConfigs []string
 	configSeen := map[string]bool{}
@@ -102,11 +102,11 @@ func run(file string, verbose, force, dryRun bool, jobs int, why, graph, showSta
 			return nil // silent failure for completion
 		}
 		defer f.Close()
-		ast, err := mk.Parse(f)
+		ast, err := cv.Parse(f)
 		if err != nil {
 			return nil
 		}
-		g, err := mk.BuildGraph(ast, vars, &mk.BuildState{Targets: make(map[string]*mk.TargetState)}, nil)
+		g, err := cv.BuildGraph(ast, vars, &cv.BuildState{Targets: make(map[string]*cv.TargetState)}, nil)
 		if err != nil {
 			return nil
 		}
@@ -121,7 +121,7 @@ func run(file string, verbose, force, dryRun bool, jobs int, why, graph, showSta
 
 	// --state only needs the build database
 	if showState {
-		state := mk.LoadState(configSuffix)
+		state := cv.LoadState(configSuffix)
 		if len(buildTargets) == 0 {
 			return fmt.Errorf("--state requires at least one target")
 		}
@@ -143,14 +143,14 @@ func run(file string, verbose, force, dryRun bool, jobs int, why, graph, showSta
 	}
 	defer f.Close()
 
-	ast, err := mk.Parse(f)
+	ast, err := cv.Parse(f)
 	if err != nil {
 		return err
 	}
 
-	state := mk.LoadState(configSuffix)
+	state := cv.LoadState(configSuffix)
 
-	g, err := mk.BuildGraph(ast, vars, state, activeConfigs)
+	g, err := cv.BuildGraph(ast, vars, state, activeConfigs)
 	if err != nil {
 		return err
 	}
@@ -188,7 +188,7 @@ func run(file string, verbose, force, dryRun bool, jobs int, why, graph, showSta
 	}
 
 	// Normal build
-	exec := mk.NewExecutor(g, state, vars, &mk.ExecutorArgs{
+	exec := cv.NewExecutor(g, state, vars, &cv.ExecutorArgs{
 		Verbose:      verbose,
 		Force:        force,
 		DryRun:       dryRun,

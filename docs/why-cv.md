@@ -1,11 +1,11 @@
-# Why mk?
+# Why cv?
 
 Make's execution model — declare a dependency DAG, run recipes to
 produce targets from prerequisites, rebuild only what's stale — is one
 of the best ideas in software engineering. It has survived forty-eight
 years because the core abstraction is right.
 
-Everything else about Make is a source of friction. mk keeps the model
+Everything else about Make is a source of friction. cv keeps the model
 and fixes the rest.
 
 ## At a glance
@@ -55,13 +55,13 @@ and recursive-make wrappers that exist solely to paper over timestamp
 unreliability. These workarounds add complexity, obscure intent, and
 introduce their own bugs.
 
-mk uses SHA-256 content hashes instead. Modify a file then revert it?
+cv uses SHA-256 content hashes instead. Modify a file then revert it?
 The hash matches the recorded value, so nothing rebuilds. Extract
 unchanged files from a fresh archive? Same content, same hash, no
 rebuild. The only thing that triggers a rebuild is an actual change to
 the content that the build depends on.
 
-For performance, mk caches hashes using `(path, mtime, size)` as a
+For performance, cv caches hashes using `(path, mtime, size)` as a
 cache key. If a file's metadata hasn't changed, its hash is served
 from cache without re-reading the file. This makes staleness checks
 nearly as fast as `stat()` in the common case while remaining correct
@@ -71,13 +71,13 @@ in all cases.
 
 ## Syntax
 
-Make's syntax has accumulated decades of special cases. mk replaces
+Make's syntax has accumulated decades of special cases. cv replaces
 them with a small set of consistent rules.
 
 ### Indentation
 
 Make requires tabs for recipe lines. A space where a tab should be is a
-silent, invisible error. mk accepts any whitespace — tabs, spaces, or a
+silent, invisible error. cv accepts any whitespace — tabs, spaces, or a
 mix. Indentation is indentation.
 
 ### Variable references
@@ -85,7 +85,7 @@ mix. Indentation is indentation.
 In Make, `$x` means the single-character variable `x`, while `$(foo)`
 means the multi-character variable `foo`. This single-character rule is
 a constant source of bugs: `$cflags` expands to the value of `c`
-followed by the literal text `flags`. mk has no single-character rule:
+followed by the literal text `flags`. cv has no single-character rule:
 `$cflags` means the variable `cflags`. Use `${name}` when the variable
 is adjacent to other identifier characters: `${prefix}_suffix`.
 
@@ -97,15 +97,15 @@ recipes — shell command substitution. This means every literal `$` in a
 recipe must be doubled (`$$`), and it's never obvious at a glance
 whether `$(...)` is a Make expansion or a shell expansion.
 
-mk assigns each sigil exactly one meaning:
+cv assigns each sigil exactly one meaning:
 
 | Syntax | Meaning | Expanded by |
 |--------|---------|-------------|
-| `$name` / `${name}` | Variable reference | mk |
-| `$[func args]` | mk function call | mk |
+| `$name` / `${name}` | Variable reference | cv |
+| `$[func args]` | cv function call | cv |
 | `$(...)` | Shell command substitution | shell |
 
-`$(...)` is **never** interpreted by mk. It passes through to the shell
+`$(...)` is **never** interpreted by cv. It passes through to the shell
 verbatim. This means recipes look like normal shell scripts:
 
 ```
@@ -114,12 +114,12 @@ build/app: $obj
     $cxx -DCOMMIT="\"$commit\"" -o $target $inputs
 ```
 
-`$cxx`, `$target`, and `$inputs` are mk variables. `$(git ...)` is
+`$cxx`, `$target`, and `$inputs` are cv variables. `$(git ...)` is
 shell command substitution. No escaping, no ambiguity.
 
 ### Automatic variables
 
-| Make | mk | Meaning |
+| Make | cv | Meaning |
 |------|----|---------|
 | `$@` | `$target` | Target being built |
 | `$<` | `$input` | First prerequisite |
@@ -137,7 +137,7 @@ default. A `cd` on one line has no effect on the next. Multi-line shell
 logic requires backslash continuations and careful `&&` chaining. Make
 added `.ONESHELL` as an opt-in fix, but most projects don't use it.
 
-In mk, the entire recipe block runs as a single `sh -c` invocation with
+In cv, the entire recipe block runs as a single `sh -c` invocation with
 `set -e`. `cd` persists. Multi-line logic works naturally. This is
 always on, not opt-in.
 
@@ -145,21 +145,21 @@ always on, not opt-in.
 
 ## Incremental builds
 
-Make tracks one thing: file timestamps. mk's build database (stored in
-`.mk/`) tracks four:
+Make tracks one thing: file timestamps. cv's build database (stored in
+`.cv/`) tracks four:
 
 ### Recipe text
 
-mk hashes the recipe text after variable expansion. Change `-O2` to
+cv hashes the recipe text after variable expansion. Change `-O2` to
 `-O0` in your flags? The recipe hash changes. Rebuild. Change a comment
-in the mkfile that doesn't affect any recipe? No rebuild.
+in the cvfile that doesn't affect any recipe? No rebuild.
 
 Make doesn't track recipe text at all. Changing compiler flags requires
 `make clean && make` to take effect reliably.
 
 ### Prerequisite sets
 
-mk records which prerequisites a target was built from. If the set
+cv records which prerequisites a target was built from. If the set
 changes — a source file added, removed, or renamed — the target is
 stale.
 
@@ -170,20 +170,20 @@ removed. The only reliable fix is a clean build.
 
 ### Input content
 
-mk records the SHA-256 hash of each prerequisite's content at the time
+cv records the SHA-256 hash of each prerequisite's content at the time
 of the last successful build. Only actual content changes trigger
 rebuilds, not metadata changes.
 
 ### Output content
 
-mk also records the hash of the target itself. This detects targets
+cv also records the hash of the target itself. This detects targets
 modified outside the build system (e.g., by hand-editing a generated
 file) and triggers a rebuild to restore consistency.
 
 ### Non-file artifacts
 
 For targets that aren't files (Docker images, database schemas, deployed
-services), mk supports a `[fingerprint: command]` annotation. The
+services), cv supports a `[fingerprint: command]` annotation. The
 command outputs a stable string (an image ID, a schema version, etc.).
 If it changes since the last build, the target is stale.
 
@@ -227,16 +227,16 @@ problems in detail. The recommended fix — a single top-level Makefile
 that includes all rules — is correct but awkward in Make because it
 offers no scoping or path-rebasing mechanism.
 
-### mk's approach
+### cv's approach
 
-mk's scoped includes solve this cleanly:
+cv's scoped includes solve this cleanly:
 
 ```
-include lib/mkfile as lib
-include app/mkfile as app
+include lib/cvfile as lib
+include app/cvfile as app
 ```
 
-Each included mkfile is evaluated with:
+Each included cvfile is evaluated with:
 
 - **Variable isolation.** The child's variables live under the alias
   prefix (`$lib.src`, `$lib.obj`). The child inherits parent variables
@@ -246,14 +246,14 @@ Each included mkfile is evaluated with:
   prefixed with the child's directory. The child writes `build/foo.o`;
   the global graph sees `lib/build/foo.o`.
 
-- **A single graph.** Everything merges into one dependency DAG. mk
+- **A single graph.** Everything merges into one dependency DAG. cv
   sees every target, every dependency, every recipe — across the entire
   project. Parallelism, incrementals, and `--why` diagnostics all work
   correctly across directory boundaries.
 
-Pattern discovery (`include {path}/mkfile as {path}`) auto-discovers
-subdirectory mkfiles, so adding a new directory to a project is just
-creating a `mkfile` in it.
+Pattern discovery (`include {path}/cvfile as {path}`) auto-discovers
+subdirectory cvfiles, so adding a new directory to a project is just
+creating a `cvfile` in it.
 
 ---
 
@@ -262,7 +262,7 @@ creating a `mkfile` in it.
 Make's `%` wildcard matches a single anonymous stem. You get one capture
 per rule, and you can't name it or use multiple captures.
 
-mk uses named captures in braces:
+cv uses named captures in braces:
 
 ```
 build/{name}.o: src/{name}.c
@@ -301,10 +301,10 @@ end
 Compose them on the command line with `+`:
 
 ```
-$ mk test:debug+asan
+$ cv test:debug+asan
 ```
 
-mk auto-derives the build directory (`build` becomes `build-debug-asan`)
+cv auto-derives the build directory (`build` becomes `build-debug-asan`)
 and isolates build state per config combination. Configs can declare
 mutual exclusion (`excludes release`) and prerequisites (`requires
 dist`).
@@ -316,32 +316,32 @@ In Make, build variants typically require either duplicated rules,
 
 ## Tasks, defaults, and cleanup
 
-mk replaces Make's `.PHONY` with a `!` prefix:
+cv replaces Make's `.PHONY` with a `!` prefix:
 
 ```
 !test: build/app
     ./$input --self-test
 
 !clean:
-    rm -rf build/ .mk/
+    rm -rf build/ .cv/
 ```
 
-Tasks always run when requested. If no target is given, mk builds the
+Tasks always run when requested. If no target is given, cv builds the
 first non-task rule (no need for a `.DEFAULT_GOAL`).
 
-If a recipe fails, mk deletes the partial target by default (Make's
+If a recipe fails, cv deletes the partial target by default (Make's
 `.DELETE_ON_ERROR` behaviour, but always on). The `[keep]` annotation
 overrides this for targets that should survive a failed build.
 
 ---
 
-## What mk is not
+## What cv is not
 
-mk is not a package manager, a meta-build system, or a configuration
+cv is not a package manager, a meta-build system, or a configuration
 tool. It doesn't generate Makefiles, CMakeLists, or Ninja files. It
 doesn't fetch dependencies, manage toolchains, or abstract across
 platforms.
 
-mk is a build tool. It reads a dependency graph, determines what's
+cv is a build tool. It reads a dependency graph, determines what's
 stale, and runs recipes to bring targets up to date. It does that one
 thing, and it does it correctly.

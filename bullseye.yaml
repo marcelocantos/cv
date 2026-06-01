@@ -6,7 +6,7 @@ targets:
     acceptance:
     - DESIGN.md §11 fully implemented across all six phases
     - Make-style `-include *.d` and `-MP` ritual no longer needed by users
-    - std/c.mk and std/cxx.mk provide self-healing header tracking out of the box
+    - std/c.cv and std/cxx.cv provide self-healing header tracking out of the box
     context: |
       The Make `-MMD` / `-include *.d` / `-MP` pastiche is unsound: lagging
       depfiles, fatal-on-deleted-header behaviour, tool-specific, untracked
@@ -22,12 +22,12 @@ targets:
     depends_on: []
     acceptance:
     - "[deps: gcc] / [deps: makefile] annotation parses; AST and graph carry it"
-    - "$depfile variable expands per (target, config) under .mk/deps/"
+    - "$depfile variable expands per (target, config) under .cv/deps/"
     - gcc/Make-format depfile parser handles line continuation and escaped spaces
     - TargetState carries DiscoveredPrereqs + DiscoveredInputHashes
     - IsStale flags discovered-set change (incl. vanished member) and hash change
     - Record wholesale-replaces discovered set (never unions)
-    - std/c.mk and std/cxx.mk annotated; `include std/c.mk` gives correct header tracking
+    - std/c.cv and std/cxx.cv annotated; `include std/c.cv` gives correct header tracking
     - tests cover annotation parse, depfile parse, staleness rules, and an E2E C compile + header-edit
     context: |
       Phase 1 covers ~80% of user-visible value with no platform-specific
@@ -68,7 +68,7 @@ targets:
     depends_on: [T1.1]
     acceptance:
     - "[writes: manifest <path>] parses and is folded into the DB"
-    - Discovered output set is fingerprinted and visible to consumers and `mk clean`
+    - Discovered output set is fingerprinted and visible to consumers and `cv clean`
     discovered: 2026-05-31
   T1.6:
     name: Phase 6 — trace mode + envelopes ([deps/writes: trace], [reads: …])

@@ -1,4 +1,4 @@
-# mk Design Spec
+# cv Design Spec
 
 A build tool with Make's dependency-graph model, minus 48 years of
 accumulated pain.
@@ -10,7 +10,7 @@ produce targets from prerequisites, parallel execution, only stale
 targets rebuilt. What changes: content hashing, sane defaults, clean
 syntax, first-class support for things Make bolted on after the fact.
 
-mk is not a radical reimagination. It is Make with the mistakes fixed.
+cv is not a radical reimagination. It is Make with the mistakes fixed.
 
 ---
 
@@ -44,11 +44,11 @@ characters: `${foo}bar`.
 |--------|---------|---------|
 | `$name` | Variable reference | Everywhere |
 | `${name}` | Variable reference (delimited) | Everywhere |
-| `$[func args]` | mk function call | Everywhere |
+| `$[func args]` | cv function call | Everywhere |
 | `$(...)` | Shell command substitution | Recipes (passed through to shell) |
 
-`$name` and `${name}` are expanded by mk everywhere. `$[...]` is
-expanded by mk everywhere. `$(...)` is **never** interpreted by mk —
+`$name` and `${name}` are expanded by cv everywhere. `$[...]` is
+expanded by cv everywhere. `$(...)` is **never** interpreted by cv —
 it is passed through verbatim to the shell. This eliminates the `$$`
 escaping dance that Make requires for shell commands in recipes.
 
@@ -63,11 +63,11 @@ Replaces the suffix `.c` with `.o` in every word of `$src`.
 ### Environment
 
 All variables are environment variables. Recipes see them without
-`export`. Command-line overrides beat mkfile assignments beat
+`export`. Command-line overrides beat cvfile assignments beat
 inherited environment. One rule, no flags.
 
 ```
-$ mk cc=clang test        # overrides cc for this invocation
+$ cv cc=clang test        # overrides cc for this invocation
 ```
 
 ### Conditional assignment
@@ -119,8 +119,8 @@ No `$@`, `$<`, `$^`. One set of names.
 
 ### Shell interop
 
-`$(...)` in recipes is shell command substitution, not mk expansion.
-mk variables and shell variables coexist naturally:
+`$(...)` in recipes is shell command substitution, not cv expansion.
+cv variables and shell variables coexist naturally:
 
 ```
 build/app: $obj
@@ -129,9 +129,9 @@ build/app: $obj
     $cxx -DCOMMIT="\"$commit\"" -DDATE="\"$date\"" -o $target $inputs
 ```
 
-`$cxx`, `$target`, `$inputs` are mk variables (expanded before the
+`$cxx`, `$target`, `$inputs` are cv variables (expanded before the
 shell sees the script). `$(git ...)` and `$(date ...)` are shell
-command substitution (passed through verbatim). mk functions are
+command substitution (passed through verbatim). cv functions are
 available in recipes via `$[...]`:
 
 ```
@@ -163,7 +163,7 @@ where existence matters but content does not.
 
 ```
 !clean:
-    rm -rf build/ .mk/
+    rm -rf build/ .cv/
 
 !test: build/app
     ./build/app --self-test
@@ -226,7 +226,7 @@ enforce the no-`/` rule. Unconstrained `{name}` is unchanged.
 
 ### Multiple matching patterns
 
-When multiple pattern rules match a target, mk merges their
+When multiple pattern rules match a target, cv merges their
 prerequisites. At most one matching rule may have a recipe;
 multiple recipes for the same target is an error.
 
@@ -282,17 +282,17 @@ config dist:
 
 | Property | Meaning |
 |----------|---------|
-| `excludes <config>` | Mutual exclusion. `mk test:debug+release` is an error. |
+| `excludes <config>` | Mutual exclusion. `cv test:debug+release` is an error. |
 | `requires <target>` | Prerequisite. Ensures the named target has been built before any `:config` builds proceed. |
 | Variable assignments | Override or append to base variables. |
 
 ### Usage
 
 ```
-$ mk test              # base config
-$ mk test:debug        # debug config
-$ mk test:debug+asan   # debug + asan composed
-$ mk test:dist         # test against distribution build
+$ cv test              # base config
+$ cv test:debug        # debug config
+$ cv test:debug+asan   # debug + asan composed
+$ cv test:dist         # test against distribution build
 ```
 
 ### Composition
@@ -304,12 +304,12 @@ overrides an earlier one.
 
 ### Build directory
 
-mk auto-derives the build directory by appending config names to the
+cv auto-derives the build directory by appending config names to the
 base `builddir`:
 
 ```
 builddir = build
-# mk test:debug+asan → builddir = build-debug-asan
+# cv test:debug+asan → builddir = build-debug-asan
 ```
 
 The build database tracks each config combination independently.
@@ -318,13 +318,13 @@ The build database tracks each config combination independently.
 
 ## 7. Build database
 
-Stored in `.mk/` (like `.git/`). Tracks per target:
+Stored in `.cv/` (like `.git/`). Tracks per target:
 
 - **Prerequisite set.** If the set changes — additions or deletions —
   the target is stale. Delete a source file? Prerequisite set changed.
   Rebuild.
 - **Recipe text** (after variable expansion). Change `-O2` to `-O0`?
-  Recipe changed. Rebuild. Change a comment in the mkfile? Recipe
+  Recipe changed. Rebuild. Change a comment in the cvfile? Recipe
   unchanged. No rebuild.
 - **Input fingerprints.** Content hash (SHA-256) of each prerequisite
   at last build time. Modify a file then revert? Hash matches. No
@@ -377,7 +377,7 @@ Conditionals can appear at file scope or inside other conditionals.
 
 ### Syntax
 
-mk functions use `$[func args]`. This is distinct from shell
+cv functions use `$[func args]`. This is distinct from shell
 `$(...)` and variable `${name}` — each sigil has exactly one meaning:
 
 ```
@@ -435,20 +435,20 @@ for config in $configs:
 ## 10. Includes
 
 ```
-include std/c.mk              # opt-in standard rules
-include lib/mkfile as lib     # scoped: lib.obj, lib.cflags, etc.
-include common.mk             # unscoped paste
-include {path}/mkfile as {path}   # auto-discover subdirectory mkfiles
+include std/c.cv              # opt-in standard rules
+include lib/cvfile as lib     # scoped: lib.obj, lib.cflags, etc.
+include common.cv             # unscoped paste
+include {path}/cvfile as {path}   # auto-discover subdirectory cvfiles
 ```
 
 ### Unscoped includes
 
-`include common.mk` pastes the file's contents into the current
+`include common.cv` pastes the file's contents into the current
 scope. Variables and rules merge directly — same as C `#include`.
 
 ### Scoped includes
 
-`include lib/mkfile as lib` includes the file with isolation:
+`include lib/cvfile as lib` includes the file with isolation:
 
 - **Variable scoping.** The child's assignments live under the alias
   prefix. The child's `src = foo.c bar.c` becomes `lib.src` from
@@ -458,40 +458,40 @@ scope. Variables and rules merge directly — same as C `#include`.
 
 - **Path rebasing.** Targets and prerequisites declared in the child
   are rebased relative to the child's directory. The child writes
-  `build/libfoo.a`; mk inserts `lib/build/libfoo.a` into the
+  `build/libfoo.a`; cv inserts `lib/build/libfoo.a` into the
   global graph. Cross-references between siblings use relative
-  paths: `../lib/build/libfoo.a` from `app/mkfile` resolves to
+  paths: `../lib/build/libfoo.a` from `app/cvfile` resolves to
   `lib/build/libfoo.a` in the global graph.
 
 - **Single graph.** All scoped includes merge into one dependency
   DAG. There is no subprocess boundary, no opaque `$(MAKE)` call.
-  mk sees every target and every dependency across the entire
+  cv sees every target and every dependency across the entire
   project, enabling correct incremental builds, parallel execution
   across directory boundaries, and accurate `--why` diagnostics.
 
 ### Pattern discovery
 
 ```
-include {path}/mkfile as {path}
+include {path}/cvfile as {path}
 ```
 
 The `{path}` capture globs across directories. Each matching
-`mkfile` is included with its directory as the scope name. This
+`cvfile` is included with its directory as the scope name. This
 is the primary mechanism for multi-directory projects:
 
 ```
-# root mkfile
+# root cvfile
 cc = clang
 cflags = -Wall -O2
 
-include {path}/mkfile as {path}
+include {path}/cvfile as {path}
 
 build/app: lib/build/libfoo.a app/build/main.o
     $cc -o $target $inputs
 ```
 
 ```
-# lib/mkfile — sees $cc from parent
+# lib/cvfile — sees $cc from parent
 src = foo.c bar.c
 obj = $[patsubst %.c,build/%.o,$src]
 
@@ -504,21 +504,21 @@ build/{name}.o: {name}.c
 
 After inclusion, the global graph contains targets
 `lib/build/libfoo.a`, `lib/build/foo.o`, `lib/build/bar.o`, etc.
-The root mkfile references them by their rebased file paths. The
+The root cvfile references them by their rebased file paths. The
 variable `$lib.src` is `foo.c bar.c`.
 
 ### Standard library
 
 The standard library (`std/`) provides conventional rules for common
 languages:
-- `std/c.mk` — C compilation (`cc`, `cflags`, pattern rules)
-- `std/cxx.mk` — C++ compilation
-- `std/go.mk` — Go build
+- `std/c.cv` — C compilation (`cc`, `cflags`, pattern rules)
+- `std/cxx.cv` — C++ compilation
+- `std/go.cv` — Go build
 
-These are opt-in. mk has no implicit rules and no built-in variables.
+These are opt-in. cv has no implicit rules and no built-in variables.
 
-Standard library files are embedded in the mk binary — `include std/c.mk`
-works without any installation step. A local `std/c.mk` file takes
+Standard library files are embedded in the cv binary — `include std/c.cv`
+works without any installation step. A local `std/c.cv` file takes
 priority over the embedded version. All variables use `?=` so they can be
 overridden before the include.
 
@@ -527,9 +527,9 @@ overridden before the include.
 ## 11. Discovered dependencies
 
 Some prerequisites are unknown until a recipe runs. A C compile reads
-headers no mkfile declared; a codegen step may emit files no mkfile
+headers no cvfile declared; a codegen step may emit files no cvfile
 listed. Make papers over this with `-MMD` plus `-include *.d` plus `-MP`
-empty-rule hacks. mk gives discovery a first-class place in the model.
+empty-rule hacks. cv gives discovery a first-class place in the model.
 
 ### Hard and soft edges
 
@@ -537,7 +537,7 @@ Every dependency edge is one of two kinds.
 
 | Edge | Source | Constrains | Required to exist? |
 |---|---|---|---|
-| **Hard** | Declared in the mkfile (`a: b`) | Ordering **and** staleness | Yes — it is an ordering constraint |
+| **Hard** | Declared in the cvfile (`a: b`) | Ordering **and** staleness | Yes — it is an ordering constraint |
 | **Soft** | Discovered by running the recipe | Staleness only | No — absence is just "changed" |
 
 A hard edge promises build *order*: `b` is built before `a`'s recipe
@@ -558,7 +558,7 @@ protobuf output, checked-in parsers, lockfiles) are common and
 legitimate; committedness tells you nothing about whether *this* build
 produces the file.
 
-Because mk knows its own target set, this rule is enforced: a discovered
+Because cv knows its own target set, this rule is enforced: a discovered
 read whose path matches a known target or pattern that was not declared
 as a prerequisite is reported (or auto-promoted to a hard edge, per
 policy). It is a latent ordering race.
@@ -581,7 +581,7 @@ Two rules make the model airtight and fix Make's deleted-file failure:
    execution.
 
 Deleting a header while *leaving* an `#include` of it produces a real
-compiler error, which mk surfaces — it always defers to the recipe's
+compiler error, which cv surfaces — it always defers to the recipe's
 exit status rather than pre-judging from a stale edge.
 
 ### Mechanisms
@@ -589,7 +589,7 @@ exit status rather than pre-judging from a stale edge.
 Discovery is one capability with three producers.
 
 **Depfile adapter.** The recipe emits a dependency list as a byproduct;
-mk parses it, normalizes paths, folds it into the build database, and
+cv parses it, normalizes paths, folds it into the build database, and
 discards the file:
 
 ```
@@ -597,12 +597,12 @@ build/{name}.o [deps: gcc]: src/{name}.c
     $cc $cflags -MMD -MF $depfile -c $input -o $target
 ```
 
-`[deps: <format>]` names a parser; `$depfile` is a path mk allocates
-under `.mk/deps/` (partitioned by config, mirroring the target path).
+`[deps: <format>]` names a parser; `$depfile` is a path cv allocates
+under `.cv/deps/` (partitioned by config, mirroring the target path).
 Formats: `gcc`/`makefile`, `msvc`, `json`, `lines`. This is strictly
-better than `-include`: mk owns the parse, folds into the content-hashed
-DB, and no `.d` enters the source tree. `std/c.mk` and `std/cxx.mk`
-carry this annotation, so `include std/c.mk` gets correct header
+better than `-include`: cv owns the parse, folds into the content-hashed
+DB, and no `.d` enters the source tree. `std/c.cv` and `std/cxx.cv`
+carry this annotation, so `include std/c.cv` gets correct header
 tracking with no ritual visible.
 
 **Trace.** Observe the recipe's actual file accesses with zero tool
@@ -613,7 +613,7 @@ build/{name}.o [deps: trace]: src/{name}.c
     $cc $cflags -c $input -o $target
 ```
 
-mk runs the recipe under observation (macOS: sandbox profile /
+cv runs the recipe under observation (macOS: sandbox profile /
 `fs_usage`; Linux: seccomp-bpf, ptrace, or `fanotify`) and records every
 path opened for read. Works for any tool — protoc, sass, bundlers — not
 just compilers. Platform-specific and slower than a depfile, so it is
@@ -640,7 +640,7 @@ second execution mode.
 Two-phase analysis-then-execution is the right capability but the wrong
 default. **The previous build's recorded soft-edges *are* the analysis
 pass.** On an incremental build, last run's discovered set is an
-exact-as-of-last-build approximation of the dependency shape; mk
+exact-as-of-last-build approximation of the dependency shape; cv
 schedules against it, executes, and re-records. This is safe even when
 the shape has drifted, because correctness comes from the post-hoc
 content-hash check plus wholesale re-record, never from the schedule.
@@ -676,15 +676,15 @@ gen/ [writes: manifest gen/.manifest]: schema.idl
 ```
 
 `[writes: manifest <path>]` reads a producer-emitted list of outputs;
-`[writes: trace]` observes them. mk records the discovered output set
-and fingerprints each, so downstream consumers and `mk clean` see the
+`[writes: trace]` observes them. cv records the discovered output set
+and fingerprints each, so downstream consumers and `cv clean` see the
 real artefacts.
 
 ### Verification
 
-Under trace, mk knows the complete read/write set, so it can assert the
+Under trace, cv knows the complete read/write set, so it can assert the
 build is correctly specified — something Make cannot do at all. Run
-with `--verify` (or per-target `[verify]`) and mk flags:
+with `--verify` (or per-target `[verify]`) and cv flags:
 
 - **Undeclared reads of an in-graph target** — a recipe read a path
   this build also produces but did not declare. A latent ordering race.
@@ -708,15 +708,15 @@ can pre-stage it. Optional.
 | Annotation | Meaning |
 |---|---|
 | `[deps: gcc\|makefile\|msvc\|json\|lines]` | Recipe emits a depfile at `$depfile`; folded post-run |
-| `[deps: trace]` | mk observes the recipe's read-set |
+| `[deps: trace]` | cv observes the recipe's read-set |
 | `[scan: <cmd>]` | Separate cheap node producing schedulable edges before the recipe |
 | `[scan-format: <fmt>]` | Format of `[scan]` output (default `gcc`) |
 | `[writes: manifest <path>]` | Recipe emits a list of its outputs |
-| `[writes: trace]` | mk observes the recipe's write-set |
+| `[writes: trace]` | cv observes the recipe's write-set |
 | `[reads: <glob>…]` | Declared read envelope (static bound) |
 | `[verify]` | Force hermetic verification for this target |
 
-New recipe variable: `$depfile` — path mk allocates under `.mk/deps/`
+New recipe variable: `$depfile` — path cv allocates under `.cv/deps/`
 for this target's depfile, set only when the rule has a `[deps: …]`
 annotation. Sits alongside `$target`, `$input`, `$inputs`, `$stem`,
 and `$changed`.
@@ -729,11 +729,11 @@ for the full rationale, prior art, and non-goals.
 ## 12. Parallel execution
 
 ```
-$ mk -j8 test
-$ mk -j0 test          # number of CPUs
+$ cv -j8 test
+$ cv -j0 test          # number of CPUs
 ```
 
-mk builds independent targets concurrently. The dependency graph
+cv builds independent targets concurrently. The dependency graph
 determines ordering; siblings in the DAG run in parallel.
 
 Parallel execution respects rule boundaries — a recipe is atomic.
@@ -745,12 +745,12 @@ each recipe are buffered and printed together on completion.
 ## 13. Command-line interface
 
 ```
-mk [flags] [target...] [var=value...]
+cv [flags] [target...] [var=value...]
 ```
 
 | Flag | Meaning |
 |------|---------|
-| `-f FILE` | Read FILE instead of `mkfile` |
+| `-f FILE` | Read FILE instead of `cvfile` |
 | `-j N` | Parallel jobs (0 = number of CPUs) |
 | `-v` | Verbose — print recipe commands |
 | `-n` | Dry run — print what would be built |
@@ -759,10 +759,10 @@ mk [flags] [target...] [var=value...]
 Targets and variable assignments can be intermixed:
 
 ```
-$ mk cc=clang test:asan -j0
+$ cv cc=clang test:asan -j0
 ```
 
-If no target is specified, mk builds the first non-task rule.
+If no target is specified, cv builds the first non-task rule.
 
 ### Diagnostic flags
 
@@ -776,16 +776,16 @@ If no target is specified, mk builds the first non-task rule.
 
 ## 14. What's removed
 
-| Make feature | mk stance |
+| Make feature | cv stance |
 |---|---|
 | Tab-only indentation | Any whitespace |
 | `$x` as `$(x)` single-char parse | `$name` means `name` |
-| `$(func ...)` overloaded for functions and shell | `$[func ...]` for mk functions; `$(...)` is always shell |
+| `$(func ...)` overloaded for functions and shell | `$[func ...]` for cv functions; `$(...)` is always shell |
 | `=` (recursive/lazy by default) | `=` is immediate; `lazy` keyword for deferred |
-| `$$` escaping in recipes | Not needed — `$(...)` is shell, `$[...]` is mk |
+| `$$` escaping in recipes | Not needed — `$(...)` is shell, `$[...]` is cv |
 | Suffix rules (`.c.o:`) | Removed |
-| Implicit rules | Removed — use `include std/c.mk` |
-| Built-in variables (`CC`, `CFLAGS`) | Removed — use `include std/c.mk` |
+| Implicit rules | Removed — use `include std/c.cv` |
+| Built-in variables (`CC`, `CFLAGS`) | Removed — use `include std/c.cv` |
 | `.PHONY` | `!` prefix |
 | `.DELETE_ON_ERROR` | Default behavior |
 | `.PRECIOUS` / `.INTERMEDIATE` / `.SECONDARY` | Single `[keep]` annotation |
@@ -797,7 +797,7 @@ If no target is specified, mk builds the first non-task rule.
 | `$(MAKE)` recursive make | Scoped includes build a single graph — no subprocess boundary |
 | Double-colon rules | Removed |
 | Archive members `lib(member)` | Removed |
-| `-include *.d` / `-MP` ritual | Recipes report what they read; mk records discovered edges in the content-hashed DB (§11). No `.d` files; deleted headers self-heal. |
+| `-include *.d` / `-MP` ritual | Recipes report what they read; cv records discovered edges in the content-hashed DB (§11). No `.d` files; deleted headers self-heal. |
 | `%` (single anonymous stem) | `{name}` (named, multiple) |
 | `export` / `unexport` | All variables are environment |
 | `override` | Command-line always wins |
@@ -819,7 +819,7 @@ If no target is specified, mk builds the first non-task rule.
 | `$[wildcard]`, `$[shell]`, `$[patsubst]` | `$[...]` syntax, same semantics |
 | `include` | Extended with `as` scoping, path rebasing, pattern discovery |
 | `-n` dry run | More accurate with build database |
-| Command-line variable overrides | Same: `mk cc=clang` |
+| Command-line variable overrides | Same: `cv cc=clang` |
 | Substitution references | `$var:.c=.o` |
 | Order-only prerequisites | Same `\|` syntax: `target: prereqs \| order-only` |
 | Multi-output rules | Same syntax, explicit grouping semantics |
@@ -831,7 +831,7 @@ If no target is specified, mk builds the first non-task rule.
 ```
 # C++ project with tests, benchmarks, sanitizer support
 
-include std/cxx.mk
+include std/cxx.cv
 
 cxx = c++ -std=c++17 -stdlib=libc++
 cxxflags = -O2 -g -Wall -Wextra
@@ -909,15 +909,15 @@ $builddir/csp_bench: $lib_objs $bench_objs
 !test-dist: test test:dist
 
 !clean:
-    rm -rf build build-* dist .mk/
+    rm -rf build build-* dist .cv/
 ```
 
 ```
-$ mk                     # build + run tests
-$ mk test:asan           # ASan + UBSan
-$ mk test:debug+asan     # debug + ASan
-$ mk test:dist           # test distribution build
-$ mk bench:release -j0   # release benchmarks, all cores
-$ mk clean               # remove everything
-$ mk --why build/src/csp.o # explain why it's stale
+$ cv                     # build + run tests
+$ cv test:asan           # ASan + UBSan
+$ cv test:debug+asan     # debug + ASan
+$ cv test:dist           # test distribution build
+$ cv bench:release -j0   # release benchmarks, all cores
+$ cv clean               # remove everything
+$ cv --why build/src/csp.o # explain why it's stale
 ```

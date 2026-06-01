@@ -27,9 +27,9 @@ jobs:
           for pair in darwin/arm64 linux/amd64 linux/arm64; do
             os="${pair%/*}"
             arch="${pair#*/}"
-            GOOS=$os GOARCH=$arch go build -ldflags "-s -w -X main.version=${GITHUB_REF#refs/tags/}" -o mk ./cmd/mk
-            tar czf "mk-${version}-${os}-${arch}.tar.gz" mk completions/
-            rm mk
+            GOOS=$os GOARCH=$arch go build -ldflags "-s -w -X main.version=${GITHUB_REF#refs/tags/}" -o cv ./cmd/cv
+            tar czf "cv-${version}-${os}-${arch}.tar.gz" cv completions/
+            rm cv
           done
 
       - name: Upload release assets
@@ -40,7 +40,7 @@ jobs:
           version="${tag#v}"
           # Create release if it doesn't exist yet
           gh release create "$tag" --title "$tag" --generate-notes 2>/dev/null || true
-          gh release upload "$tag" mk-${version}-*.tar.gz --clobber
+          gh release upload "$tag" cv-${version}-*.tar.gz --clobber
 
       - name: Update Homebrew formula
         uses: Justintime50/homebrew-releaser@v3
@@ -49,17 +49,17 @@ jobs:
           homebrew_tap: homebrew-tap
           github_token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           install: |-
-            bin.install "mk"
-            bash_completion.install "completions/mk.bash" => "mk"
-            zsh_completion.install "completions/mk.zsh" => "_mk"
+            bin.install "cv"
+            bash_completion.install "completions/cv.bash" => "cv"
+            zsh_completion.install "completions/cv.zsh" => "_cv"
           test: |-
-            (testpath/"mkfile").write <<~EOS
+            (testpath/"cvfile").write <<~EOS
               greeting = world
 
               hello.txt:
                   echo $greeting > $target
             EOS
-            system bin/"mk", "-n", "hello.txt"
+            system bin/"cv", "-n", "hello.txt"
           version: ${{ github.ref_name }}
           target_darwin_amd64: false
           target_darwin_arm64: true

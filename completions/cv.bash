@@ -1,4 +1,4 @@
-_mk() {
+_cv() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
 
     # Complete flags
@@ -7,10 +7,10 @@ _mk() {
         return
     fi
 
-    # Complete targets and configs from mkfile
+    # Complete targets and configs from cvfile
     local targets
-    targets=$(mk --complete 2>/dev/null)
+    targets=$(cv --complete 2>/dev/null)
     COMPREPLY=($(compgen -W "$targets" -- "$cur"))
 }
 
-complete -F _mk mk
+complete -F _cv cv

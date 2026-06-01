@@ -1,7 +1,7 @@
-// Copyright 2026 The mk Authors
+// Copyright 2026 The cv Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package mk
+package cv
 
 import (
 	"testing"

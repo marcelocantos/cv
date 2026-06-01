@@ -1,9 +1,9 @@
-// Copyright 2026 The mk Authors
+// Copyright 2026 The cv Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //go:build linux
 
-package mk
+package cv
 
 import (
 	"fmt"
@@ -32,7 +32,7 @@ func traceSupported() (bool, string) {
 // in first-seen order. Paths are recorded relative to cwd if possible,
 // otherwise absolute as strace reports them.
 func runTraced(script string, stdout, stderr io.Writer, env []string) (reads, writes []string, err error) {
-	tmp, err := os.CreateTemp("", "mk-trace-*.log")
+	tmp, err := os.CreateTemp("", "cv-trace-*.log")
 	if err != nil {
 		return nil, nil, err
 	}

@@ -1,7 +1,7 @@
-// Copyright 2026 The mk Authors
+// Copyright 2026 The cv Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package mk
+package cv
 
 import (
 	"bytes"
@@ -174,7 +174,7 @@ func (e *Executor) doBuild(target string, rule *resolvedRule) error {
 	if !rule.isTask && !e.force && !e.state.IsStale(rule.targets, rule.prereqs, recipeText, fingerprint, e.cache) {
 		if e.verbose {
 			e.outputMu.Lock()
-			fmt.Fprintf(os.Stderr, "mk: %q is up to date\n", rule.target)
+			fmt.Fprintf(os.Stderr, "cv: %q is up to date\n", rule.target)
 			e.outputMu.Unlock()
 		}
 		return nil
@@ -249,7 +249,7 @@ func (e *Executor) executeRecipe(rule *resolvedRule, recipeText, fingerprint str
 
 	// Build banner
 	var banner strings.Builder
-	fmt.Fprintf(&banner, "mk: building %q\n", rule.target)
+	fmt.Fprintf(&banner, "cv: building %q\n", rule.target)
 	if e.verbose || e.dryRun {
 		for _, line := range strings.Split(recipeText, "\n") {
 			fmt.Fprintf(&banner, "  %s\n", line)
@@ -330,7 +330,7 @@ func (e *Executor) executeRecipe(rule *resolvedRule, recipeText, fingerprint str
 			return fmt.Errorf("parsing depfile %q for %q: %w", depfilePath, rule.target, derr)
 		}
 		discovered = filterDiscovered(paths, rule)
-		// mk owns the depfile; remove it after folding into the DB.
+		// cv owns the depfile; remove it after folding into the DB.
 		_ = os.Remove(depfilePath)
 	}
 	if rule.depsFormat == "trace" && len(tracedReads) > 0 {
@@ -346,7 +346,7 @@ func (e *Executor) executeRecipe(rule *resolvedRule, recipeText, fingerprint str
 				return fmt.Errorf("%s (--verify)", msg)
 			}
 			e.outputMu.Lock()
-			fmt.Fprintf(os.Stderr, "mk: warning: %s\n", msg)
+			fmt.Fprintf(os.Stderr, "cv: warning: %s\n", msg)
 			e.outputMu.Unlock()
 		}
 	}
@@ -361,7 +361,7 @@ func (e *Executor) executeRecipe(rule *resolvedRule, recipeText, fingerprint str
 				return fmt.Errorf("%s (--verify)", msg)
 			}
 			e.outputMu.Lock()
-			fmt.Fprintf(os.Stderr, "mk: warning: %s\n", msg)
+			fmt.Fprintf(os.Stderr, "cv: warning: %s\n", msg)
 			e.outputMu.Unlock()
 		}
 	}
@@ -455,9 +455,9 @@ func mergeDiscovered(a, b []string) []string {
 	return out
 }
 
-// depfilePathFor returns the path mk allocates for this rule's depfile, or
+// depfilePathFor returns the path cv allocates for this rule's depfile, or
 // "" if the rule has no [deps: …] annotation. The path mirrors the target
-// name under .mk/deps/[config/] so it is inspectable when debugging.
+// name under .cv/deps/[config/] so it is inspectable when debugging.
 func (e *Executor) depfilePathFor(rule *resolvedRule) string {
 	if rule.depsFormat == "" || rule.isTask {
 		return ""
@@ -465,7 +465,7 @@ func (e *Executor) depfilePathFor(rule *resolvedRule) string {
 	// Use the primary target name; for multi-output rules all outputs share
 	// the same recipe and therefore the same depfile.
 	base := filepath.Clean(rule.target)
-	// Defensive: refuse paths that would escape .mk/deps via .. or absolute
+	// Defensive: refuse paths that would escape .cv/deps via .. or absolute
 	// paths. Fall back to a flattened name in that case.
 	if filepath.IsAbs(base) || strings.HasPrefix(base, "..") {
 		base = strings.ReplaceAll(strings.ReplaceAll(base, string(filepath.Separator), "_"), "..", "_")
