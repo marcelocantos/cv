@@ -1,0 +1,451 @@
+# hygiene.yaml — declared, drift-validated hygiene posture for cv.
+# Schema reference: the `hygiene` skill (~/.claude/skills/hygiene/SKILL.md).
+# Validate with `/hygiene`; aggregate the fleet with `/hygiene fleet`.
+#
+# Tiers are PER DIMENSION (schema v1): a dimension's held tier is the highest T
+# such that every item in it with `tier <= T` is satisfied. `floors` is the
+# per-dimension ratchet (below floor => DRIFT); `aspires` is the gap horizon;
+# `enforce` is intent-only and does not affect tiers.
+#
+# Parent `go.work` (sibling of this repo) does not list this module, so Go
+# commands must set GOWORK=off or they fail. That is an environment trap,
+# not a cv-repo file.
+
+schema_version: 1
+
+repo: cv
+aspires: 3
+floors:            # per-dimension held-tier ratchet; below floor => DRIFT
+  correctness: 1   # library tests pass locally; no PR/push CI
+  security: 2      # zero third-party modules + GitHub secret scanning
+  quality: 1       # go vet passes locally; no format/lint CI
+  deps: 2          # go.mod only; no third-party require block
+  release: 2       # tag-triggered multi-arch build + Homebrew
+  governance: 2    # Apache-2.0 + README + .gitignore + squash-only
+  build: 2         # go.mod toolchain pin used by release.yml
+  docs: 1          # DESIGN/STABILITY/CONTRIBUTING exist; no doc CI
+  perf: 0
+  vcs: 0
+  agent: 2         # agents-guide.md, bullseye.yaml, --version
+
+tiers:
+  1: baseline    # LICENSE + README + .gitignore; tests build & run
+  2: maintained  # full matrix, examples run, lint/format, release + governance
+  3: hardened    # formal specs, security scanning, SBOM/signing, fuzzing, perf
+
+items:
+
+  # ============================== CORRECTNESS =============================
+  - id: correctness.tests
+    dim: correctness
+    desc: Library tests pass (GOWORK=off go test ./...); cmd/cv has no test files
+    state: enforced
+    cadence: continuous
+    enforce: blocking
+    tier: 1
+    evidence: {command: GOWORK=off go test ./...}
+
+  - id: correctness.pr-ci
+    dim: correctness
+    desc: Tests run on every push/PR, not only on tag-push release
+    state: planned
+    cadence: continuous
+    enforce: blocking
+    tier: 2
+    reason: Only workflow is release.yml on tags v*; master is unprotected (ENT-004).
+    evidence: {absent: {file: {path: .github/workflows/ci.yml}}}
+
+  - id: correctness.cli-tests
+    dim: correctness
+    desc: cmd/cv has tests (or a machine-checkable CLI journey)
+    state: planned
+    cadence: continuous
+    enforce: warning
+    tier: 2
+    reason: >-
+      go test ./cmd/cv reports no test files; ENT-008.
+    evidence: {absent: {file: {path: cmd/cv/main_test.go}}}
+
+  - id: correctness.release-tests
+    dim: correctness
+    desc: Release job runs `go test ./...` before building binaries
+    state: present
+    cadence: per-release
+    enforce: warning
+    tier: 3
+    evidence: {ci_step: {workflow: release.yml, name: Run tests}}
+
+  - id: correctness.fuzzing
+    dim: correctness
+    desc: Fuzz harnesses over the cvfile parser / depfile parser
+    state: planned
+    cadence: continuous
+    enforce: informational
+    tier: 3
+    reason: No go test fuzz targets (`Fuzz*`) yet.
+    evidence: {absent: {file: {path: parse_fuzz_test.go}}}
+
+  # =========================== SECURITY / SUPPLY ==========================
+  - id: security.zero-third-party
+    dim: security
+    desc: go.mod has no require block — zero third-party Go modules
+    state: present
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 1
+    evidence: {command: "! grep -qE '^require' go.mod"}
+
+  - id: security.github-secret-scan
+    dim: security
+    desc: GitHub secret scanning enabled on the repo
+    state: present
+    cadence: continuous
+    enforce: warning
+    tier: 2
+    evidence:
+      {gh_setting: {key: security_and_analysis.secret_scanning.status, equals: enabled}}
+
+  - id: security.push-protection
+    dim: security
+    desc: GitHub secret-scanning push protection enabled
+    state: present
+    cadence: continuous
+    enforce: warning
+    tier: 2
+    evidence:
+      {gh_setting: {key: security_and_analysis.secret_scanning_push_protection.status, equals: enabled}}
+
+  - id: security.gitleaks
+    dim: security
+    desc: Secret scanning (gitleaks) in pre-commit and/or CI
+    state: planned
+    cadence: continuous
+    enforce: blocking
+    tier: 3
+    reason: Relying on GitHub native secret scanning; no gitleaks config or CI job.
+    evidence: {absent: {scanner: {tool: gitleaks}}}
+
+  - id: security.govulncheck
+    dim: security
+    desc: govulncheck over the module (stdlib + any future requires)
+    state: planned
+    cadence: periodic:30d
+    enforce: warning
+    tier: 3
+    reason: Zero third-party modules; no govulncheck job or config yet.
+    evidence: {absent: {scanner: {tool: govulncheck}}}
+
+  - id: security.sast-codeql
+    dim: security
+    desc: CodeQL static analysis for Go
+    state: planned
+    cadence: continuous
+    enforce: warning
+    tier: 3
+    reason: No CodeQL workflow; go vet is the only static check.
+    evidence: {absent: {ci_job: "ci.yml#codeql"}}
+
+  - id: security.signed-releases
+    dim: security
+    desc: Release artifacts are checksummed and/or signed (cosign/sigstore)
+    state: planned
+    cadence: per-release
+    enforce: informational
+    tier: 3
+    reason: >-
+      release.yml uploads tarballs and sets skip_checksum true; no signing step.
+    evidence: {absent: {ci_step: {workflow: release.yml, name: Sign}}}
+
+  - id: security.actions-perms
+    dim: security
+    desc: Release workflow token permissions are scoped (contents write)
+    state: present
+    cadence: once-must-hold
+    enforce: warning
+    tier: 3
+    evidence:
+      {file: {path: .github/workflows/release.yml, matches: '(?m)^permissions:'}}
+
+  # ============================== CODE QUALITY ============================
+  - id: quality.vet
+    dim: quality
+    desc: go vet ./... is clean
+    state: present
+    cadence: continuous
+    enforce: warning
+    tier: 1
+    evidence: {command: GOWORK=off go vet ./...}
+
+  - id: quality.format
+    dim: quality
+    desc: Sources are gofmt-clean, enforced in CI
+    state: planned
+    cadence: continuous
+    enforce: warning
+    tier: 2
+    reason: gofmt -l reports depfile.go; no format check in CI (cvfile has !fmt only).
+    evidence: {absent: {ci_step: {workflow: ci.yml, name: Check formatting}}}
+
+  - id: quality.lint
+    dim: quality
+    desc: golangci-lint (or equivalent) clean in CI
+    state: planned
+    cadence: continuous
+    enforce: warning
+    tier: 2
+    reason: No .golangci.yml and no lint job; staticcheck is not a repo gate.
+    evidence: {absent: {file: {path: .golangci.yml}}}
+
+  # =========================== DEPENDENCY HEALTH ==========================
+  - id: deps.gomod
+    dim: deps
+    desc: go.mod present with a pinned Go language version
+    state: present
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 1
+    evidence: {file: {path: go.mod, matches: '(?m)^go '}}
+
+  - id: deps.no-third-party
+    dim: deps
+    desc: No third-party require block to refresh
+    state: skipped
+    cadence: per-release
+    enforce: informational
+    tier: 2
+    reason: Module has zero third-party Go dependencies; freshness is N/A until a require is added.
+    evidence: {absent: {file: {path: go.sum}}}
+
+  - id: deps.dependabot
+    dim: deps
+    desc: Dependabot (or equivalent) watches Go modules
+    state: skipped
+    cadence: periodic:30d
+    enforce: informational
+    tier: 2
+    reason: Zero third-party modules; Dependabot would have nothing to bump besides Go itself.
+    evidence: {absent: {file: {path: .github/dependabot.yml}}}
+
+  # ========================== RELEASE & VERSIONING =======================
+  - id: release.ci-built
+    dim: release
+    desc: Release binaries are built by CI (darwin/arm64, linux/amd64, linux/arm64)
+    state: present
+    cadence: per-release
+    enforce: warning
+    tier: 2
+    evidence: {ci_job: release.yml#release}
+
+  - id: release.homebrew
+    dim: release
+    desc: Published to the Homebrew tap on release
+    state: present
+    cadence: per-release
+    enforce: informational
+    tier: 2
+    evidence: {ci_step: {workflow: release.yml, name: Update Homebrew formula}}
+
+  - id: release.semver-minor
+    dim: release
+    desc: Latest git tag is MINOR-only (PATCH == 0)
+    state: enforced
+    cadence: per-release
+    enforce: blocking
+    tier: 2
+    evidence:
+      command: >-
+        test "$(git describe --tags --abbrev=0 | sed 's/^v//' | awk -F. '{print $3}')" = "0"
+
+  - id: release.changelog
+    dim: release
+    desc: A maintained CHANGELOG records user-visible changes per release
+    state: planned
+    cadence: per-release
+    enforce: warning
+    tier: 3
+    reason: History lives in git, GitHub release notes, and docs/audit-log.md; no CHANGELOG.md.
+    evidence: {absent: {file: {path: CHANGELOG.md}}}
+
+  # ============================ GOVERNANCE / META ========================
+  - id: governance.license
+    dim: governance
+    desc: Apache-2.0 LICENSE present
+    state: present
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 1
+    evidence: {file: {path: LICENSE, matches: 'Apache License'}}
+
+  - id: governance.readme
+    dim: governance
+    desc: README present and current
+    state: present
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 1
+    evidence: {file: {path: README.md}}
+
+  - id: governance.gitignore
+    dim: governance
+    desc: .gitignore covers the cv binary, .cv/ state, IDE/OS files
+    state: present
+    cadence: once-must-hold
+    enforce: warning
+    tier: 1
+    evidence: {file: {path: .gitignore, matches: '.cv/'}}
+
+  - id: governance.squash-only
+    dim: governance
+    desc: Repo is squash-merge only, with delete-branch-on-merge
+    state: enforced
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 2
+    evidence: {gh_setting: {key: allow_merge_commit, equals: false}}
+
+  - id: governance.security-md
+    dim: governance
+    desc: SECURITY.md documents the vulnerability-disclosure process
+    state: planned
+    cadence: once-must-hold
+    enforce: informational
+    tier: 3
+    reason: Public repo without a published disclosure policy yet.
+    evidence: {absent: {file: {path: SECURITY.md}}}
+
+  - id: governance.branch-protection
+    dim: governance
+    desc: Default branch (master) is protected with required checks
+    state: planned
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 3
+    reason: gh api branches/master/protection returns 404; no required CI (ENT-004).
+    evidence: {absent: {gh_setting: {key: protected, equals: true}}}
+
+  # ================================= BUILD ===============================
+  - id: build.gomod
+    dim: build
+    desc: Go toolchain version pinned in go.mod
+    state: present
+    cadence: once-must-hold
+    enforce: warning
+    tier: 1
+    evidence: {file: {path: go.mod, matches: '(?m)^go 1.'}}
+
+  - id: build.release-uses-mod
+    dim: build
+    desc: Release CI installs Go from go.mod (go-version-file)
+    state: present
+    cadence: per-release
+    enforce: warning
+    tier: 2
+    evidence:
+      {file: {path: .github/workflows/release.yml, matches: 'go-version-file: go.mod'}}
+
+  - id: build.cvfile
+    dim: build
+    desc: Root cvfile declares !build / !test / !vet via std/go.cv
+    state: present
+    cadence: once-must-hold
+    enforce: informational
+    tier: 2
+    evidence: {file: {path: cvfile, matches: 'include std/go.cv'}}
+
+  # ============================ DOCUMENTATION ============================
+  - id: docs.design
+    dim: docs
+    desc: DESIGN.md is the language/runtime specification
+    state: present
+    cadence: once-must-hold
+    enforce: informational
+    tier: 1
+    evidence: {file: {path: DESIGN.md}}
+
+  - id: docs.stability
+    dim: docs
+    desc: STABILITY.md catalogues the pre-1.0 interaction surface
+    state: present
+    cadence: once-must-hold
+    enforce: informational
+    tier: 1
+    evidence: {file: {path: STABILITY.md}}
+
+  - id: docs.contributing
+    dim: docs
+    desc: CONTRIBUTING.md documents clone, test, and PR flow
+    state: present
+    cadence: once-must-hold
+    enforce: informational
+    tier: 1
+    evidence: {file: {path: CONTRIBUTING.md}}
+
+  - id: docs.md-links
+    dim: docs
+    desc: Internal markdown links resolve (no dead cross-references)
+    state: planned
+    cadence: continuous
+    enforce: informational
+    tier: 2
+    reason: No link-checker job or make/cv target; docs are reviewed by hand.
+    evidence: {absent: {ci_step: {workflow: ci.yml, name: Check markdown links}}}
+
+  # ============================== PERFORMANCE ===========================
+  - id: perf.benchmarks
+    dim: perf
+    desc: Go benchmark suite exists
+    state: planned
+    cadence: per-release
+    enforce: informational
+    tier: 3
+    reason: No Benchmark* tests; performance is not tracked.
+    evidence: {absent: {file: {path: exec_bench_test.go}}}
+
+  # ============================== VCS / HISTORY =========================
+  - id: vcs.pre-commit-hook
+    dim: vcs
+    desc: Committed git hooks (scripts/hooks) gate locally before commit
+    state: planned
+    cadence: once-must-hold
+    enforce: informational
+    tier: 3
+    reason: No scripts/hooks; core.hooksPath is the default .git/hooks.
+    evidence: {absent: {file: {path: scripts/hooks/pre-commit}}}
+
+  # =================== AGENT-READINESS / ONBOARDING ====================
+  - id: agent.agents-guide
+    dim: agent
+    desc: agents-guide.md present and embedded (cv --help-agent)
+    state: present
+    cadence: once-must-hold
+    enforce: warning
+    tier: 1
+    evidence: {file: {path: agents-guide.md}}
+
+  - id: agent.bullseye
+    dim: agent
+    desc: bullseye.yaml present (convergence targets discoverable)
+    state: present
+    cadence: once-must-hold
+    enforce: informational
+    tier: 2
+    evidence: {file: {path: bullseye.yaml}}
+
+  - id: agent.cli-help
+    dim: agent
+    desc: Binary exposes --version and --help-agent flags
+    state: present
+    cadence: once-must-hold
+    enforce: informational
+    tier: 2
+    evidence: {file: {path: cmd/cv/main.go, matches: 'flag.Bool."version"'}}
+
+  - id: agent.claude-md
+    dim: agent
+    desc: AGENTS.md / CLAUDE.md present for repo-local agent conventions
+    state: planned
+    cadence: once-must-hold
+    enforce: informational
+    tier: 3
+    reason: Agent surface is agents-guide.md (product), not a repo AGENTS.md.
+    evidence: {absent: {file: {path: AGENTS.md}}}
