@@ -14,6 +14,30 @@ cv is not a radical reimagination. It is Make with the mistakes fixed.
 
 ---
 
+## 0. Lexical structure
+
+Indentation is any run of spaces or tabs; the first recipe line sets the
+base indent for the rest of that recipe, which is stripped from each line.
+A blank line does **not** end a recipe — only a line starting in column
+zero does.
+
+Comments run from `#` to end of line:
+
+```
+# a full-line comment
+cflags = -O2      # an inline comment: '#' must follow whitespace
+
+app: main.o       # comments work in rule headers too
+    $cc -o $target $inputs   # NOT stripped — this reaches the shell
+```
+
+A `#` is a comment only at the start of a trimmed line, or preceded by a
+space. `cflags = -DFOO#bar` keeps the `#`. Comments are stripped from
+cvfile statements, not from recipe lines: a recipe is passed to `sh`
+verbatim, where `#` is a shell comment with the same rule.
+
+---
+
 ## 1. Variables
 
 ### Assignment
@@ -100,8 +124,12 @@ build/{name}.o: src/{name}.c
 
 | Prefix | Meaning |
 |--------|---------|
-| `@`    | Silent — don't echo this line |
+| `@`    | Accepted and stripped for Make familiarity; **currently a no-op** |
 | `-`    | Ignore errors on this line |
+
+cv does not echo recipes by default, so `@` has nothing to suppress. Under
+`-v` or `-n` the whole recipe is printed as one banner, and `@` does not
+filter individual lines from it (`expandRecipe`, `exec.go:648`).
 
 ### Automatic variables
 
@@ -619,6 +647,12 @@ path opened for read. Works for any tool — protoc, sass, bundlers — not
 just compilers. Platform-specific and slower than a depfile, so it is
 opt-in. Trace also powers verification (below).
 
+> **As shipped (v0.10.0):** trace is Linux-only, via `strace`
+> (`trace_linux.go`). On every other platform `[deps: trace]` and
+> `[writes: trace]` fail with an explicit "not yet implemented" message
+> naming the depfile and manifest alternatives (`trace_other.go:16`). The
+> macOS sandbox / `fs_usage` path above is design intent, not code.
+
 **Scan nodes.** Soft edges cannot inform *this* build's schedule —
 except via a cheap pre-pass. A scan node is a separate lightweight
 recipe whose output *is* the dependency set, scheduled before the heavy
@@ -700,8 +734,13 @@ build/{name}.o [reads: include/** src/**]: src/{name}.c
 ```
 
 `[reads: <glob>…]` is a static bound on what the recipe may read. The
-sandbox enforces it; the verifier checks against it; a remote scheduler
-can pre-stage it. Optional.
+verifier checks against it; a sandbox could enforce it and a remote
+scheduler could pre-stage it. Optional.
+
+> **As shipped (v0.10.0):** the envelope is checked *after* the recipe
+> runs, against the discovered read set (`Executor.envelopeViolations` in
+> `exec.go`) — a warning by default, an error under `--verify`. There is no
+> sandbox and nothing prevents an out-of-envelope read.
 
 ### Syntax summary
 
@@ -714,7 +753,13 @@ can pre-stage it. Optional.
 | `[writes: manifest <path>]` | Recipe emits a list of its outputs |
 | `[writes: trace]` | cv observes the recipe's write-set |
 | `[reads: <glob>…]` | Declared read envelope (static bound) |
-| `[verify]` | Force hermetic verification for this target |
+| `[verify]` | Force hermetic verification for this target — **not implemented** |
+
+> **As shipped (v0.10.0):** `parseRuleHeader` (`parse.go:427`) recognises
+> `keep`, `fingerprint`, `deps`, `scan`, `scan-format`, `writes` and `reads`
+> only. Unrecognised annotations are not rejected — `[verify]` survives into
+> the target list and becomes a target literally named `[verify]`. Use the
+> `--verify` *flag*, which is implemented, until the annotation lands.
 
 New recipe variable: `$depfile` — path cv allocates under `.cv/deps/`
 for this target's depfile, set only when the rule has a `[deps: …]`
@@ -750,11 +795,14 @@ cv [flags] [target...] [var=value...]
 
 | Flag | Meaning |
 |------|---------|
+| `-C DIR` | Change to DIR before doing anything |
 | `-f FILE` | Read FILE instead of `cvfile` |
-| `-j N` | Parallel jobs (0 = number of CPUs) |
+| `-j N` | Parallel jobs: `-1` (default) = one per CPU, `0` = unlimited, `N` = N |
 | `-v` | Verbose — print recipe commands |
 | `-n` | Dry run — print what would be built |
 | `-B` | Unconditional rebuild (ignore build database) |
+| `--version` | Print version and exit |
+| `--help-agent` | Print the embedded agents guide |
 
 Targets and variable assignments can be intermixed:
 
@@ -770,7 +818,11 @@ If no target is specified, cv builds the first non-task rule.
 |------|---------|
 | `--why` | Explain why each target is stale |
 | `--graph` | Print the dependency subgraph |
-| `--state` | Show build database entries |
+| `--state` | Show build database entries (requires at least one target) |
+| `--verify` | Error on undeclared reads of in-graph targets (§11) |
+| `--complete` | List targets and configs for shell completion; silent on error |
+
+Flags take one or two leading dashes interchangeably.
 
 ---
 

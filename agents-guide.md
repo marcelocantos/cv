@@ -29,6 +29,14 @@ build/{name}.o: src/{name}.c
 
 The default build file is `cvfile` (no extension). Override with `cv -f FILE`.
 
+## Comments and indentation
+
+`#` starts a comment at the beginning of a trimmed line or after whitespace;
+`-DFOO#bar` keeps its `#`. Comments are stripped from cvfile statements
+(including rule headers) but **not** from recipe lines — those go to `sh`
+verbatim. Indentation is any whitespace; the first recipe line sets the base
+indent. A blank line does not end a recipe; a line in column zero does.
+
 ## Variables
 
 ### Assignment operators
@@ -111,8 +119,8 @@ Key behaviors:
 
 | Prefix | Effect |
 |--------|--------|
-| `@` | Silent (don't echo) |
-| `-` | Ignore errors |
+| `@` | Stripped, no effect — recipes are not echoed by default, and `-v`/`-n` print the whole recipe as one banner |
+| `-` | Ignore errors (appends `\|\| true`) |
 
 ### Multi-output rules
 
@@ -378,18 +386,22 @@ cv [flags] [target...] [var=value...]
 
 | Flag | Effect |
 |------|--------|
+| `-C DIR` | Change to DIR first |
 | `-f FILE` | Read FILE instead of `cvfile` |
-| `-j N` | Parallel jobs (`-1`=auto, `0`=all cores) |
+| `-j N` | Parallel jobs (`-1`=auto → one per CPU, `0`=unlimited) |
 | `-v` | Verbose |
 | `-n` | Dry run |
 | `-B` | Unconditional rebuild |
 | `--why` | Explain why targets are stale |
 | `--graph` | Print dependency subgraph (DOT) |
-| `--state` | Show build database entries |
+| `--state` | Show build database entries (requires a target) |
 | `--verify` | Error on undeclared reads of in-graph targets and on envelope violations (DESIGN.md §11) |
+| `--version` | Print version and exit |
+| `--help-agent` | Print this guide |
+| `--complete` | List targets and configs for shell completion |
 
-Default target: first non-task rule. Targets and `var=value` can be
-intermixed.
+One or two leading dashes are equivalent. Default target: the first non-task
+rule, else the first rule. Targets and `var=value` can be intermixed.
 
 ## Sigil summary
 

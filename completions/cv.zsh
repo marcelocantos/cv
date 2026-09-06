@@ -13,6 +13,7 @@ _cv() {
         '--why[explain why targets are stale]'
         '--graph[print dependency subgraph]'
         '--state[show build database entries]'
+        '--verify[error on undeclared reads of in-graph targets]'
         '--help-agent[print the cv agents guide]'
         '--version[print version and exit]'
     )

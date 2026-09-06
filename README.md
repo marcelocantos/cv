@@ -8,8 +8,11 @@ targets rebuilt — and fixes what doesn't: content hashing instead of
 timestamps, clean syntax, no tab-vs-space traps, no `$$` escaping, no
 implicit rules.
 
-See [DESIGN.md](DESIGN.md) for the full specification. There is also an
-[agents guide](agents-guide.md) optimized for AI coding assistants.
+See [DESIGN.md](DESIGN.md) for the full specification and
+[STABILITY.md](STABILITY.md) for what is settled ahead of 1.0. If you use an
+agentic coding tool, include [`agents-guide.md`](agents-guide.md) in your
+project context — it is the dense cvfile reference, and `cv --help-agent`
+prints it. To work *on* cv itself, start with [AGENTS.md](AGENTS.md).
 
 ## Why cv?
 
@@ -132,8 +135,9 @@ $ cv test:debug+asan     # compose configs
 ### Parallel builds
 
 ```
-$ cv -j0 test            # all available cores
+$ cv test                # one job per CPU (the default)
 $ cv -j8 test            # 8 jobs
+$ cv -j0 test            # unlimited — no concurrency cap at all
 ```
 
 ### Diagnostics
@@ -165,15 +169,22 @@ for the rationale and prior art.
 
 | Flag | Meaning |
 |------|---------|
+| `-C DIR` | Change to DIR before doing anything |
 | `-f FILE` | Read FILE instead of `cvfile` |
-| `-j N` | Parallel jobs (`-1`=auto, `0`=all cores) |
+| `-j N` | Parallel jobs (`-1`=auto, i.e. one per CPU; `0`=unlimited) |
 | `-v` | Verbose |
 | `-n` | Dry run |
 | `-B` | Unconditional rebuild |
 | `--why` | Explain staleness |
 | `--graph` | Print dependency subgraph |
-| `--state` | Show build database entries |
+| `--state` | Show build database entries (requires a target) |
 | `--verify` | Error on undeclared reads of in-graph targets (DESIGN.md §11) |
+| `--version` | Print version and exit |
+| `--help-agent` | Print the embedded agents guide |
+| `--complete` | List targets and configs (used by the shell completions) |
+
+Flags accept one or two leading dashes (`-why` and `--why` are the same
+flag).
 
 ## License
 

@@ -9,7 +9,7 @@ product). The pre-1.0 period exists to get these right.
 
 ## Interaction surface catalogue
 
-Snapshot as of v0.8.0.
+Snapshot as of v0.10.0.
 
 ### CLI flags
 
@@ -18,7 +18,7 @@ Snapshot as of v0.8.0.
 | `-B` | bool | `false` | **Stable** |
 | `-C` | string | `""` | **Stable** |
 | `-f` | string | `"cvfile"` | **Stable** |
-| `-j` | int | `-1` | **Stable** |
+| `-j` | int | `-1` | **Stable** — `-1` = one job per CPU, `0` = unlimited, `N` = N |
 | `-n` | bool | `false` | **Stable** |
 | `-v` | bool | `false` | **Stable** |
 | `--graph` | bool | `false` | **Stable** |
@@ -80,7 +80,7 @@ Recursive definitions (`foo = $foo bar`) are a parse error — **Stable**.
 | `[scan-format: <format>]` annotation | defaults to `gcc`. Same formats as `[deps: …]`. | **Needs review** — new in v0.9.0 |
 | `[writes: <spec>]` annotation | `target [writes: manifest path/to/manifest]: ...` or `[writes: trace]` (Linux). DESIGN.md §11. | **Needs review** — new in v0.9.0 |
 | `[reads: <glob>…]` annotation | declared read envelope; cv warns (or errors under `--verify`) when discovered reads fall outside the globs. | **Needs review** — new in v0.9.0; supports simple `*` and `**` globs. |
-| Recipe prefix `@` (silent) | **Stable** |
+| Recipe prefix `@` (accepted, stripped, no effect) | **Needs review** — parsed and discarded (`exec.go:648`); either implement per-line silencing under `-v`/`-n` or keep it as a Make-compatibility no-op |
 | Recipe prefix `-` (ignore errors) | **Stable** |
 | Inline comments | `target: dep # comment` | **Stable** |
 
@@ -196,7 +196,7 @@ cv is primarily a CLI tool. The Go API is exported for testability and potential
 |--------|-----------|
 | `Parse(io.Reader) (*File, error)` | **Stable** |
 | `BuildGraph(*File, *Vars, *BuildState, []string) (*Graph, error)` | **Needs review** — signature may change as features are added |
-| `NewExecutor(...)` | **Needs review** — parameter list is long; may become an options struct |
+| `NewExecutor(*Graph, *BuildState, *Vars, *ExecutorArgs)` | **Needs review** — takes a struct argument as of v0.9.0; `ExecutorArgs` may gain fields (the zero value preserves behaviour) |
 | `NewVars() *Vars` | **Stable** |
 | `Vars.Get`, `Set`, `Expand`, `Clone`, etc. | **Stable** |
 | `LoadState(string) *BuildState` | **Stable** |
@@ -219,7 +219,6 @@ cv is primarily a CLI tool. The Go API is exported for testability and potential
 ## Gaps and prerequisites for 1.0
 
 - **`Graph.Resolve` return type**: Returns unexported `*resolvedRule`. Either export the type or unexport the method.
-- **`NewExecutor` signature**: 7 parameters — consider an options struct.
 - **`BuildGraph` signature**: May need additional parameters as features grow — consider an options struct.
 - **Config composition**: The `target:config1+config2` CLI syntax and config block semantics need more real-world usage before locking in.
 - **Constrained captures**: Glob and regex constraint syntax (`{name:glob}`, `{name/regex}`) needs more usage to confirm the design.
@@ -227,7 +226,9 @@ cv is primarily a CLI tool. The Go API is exported for testability and potential
 - **User-defined functions**: Single-expression body (`fn name(params): return expr`) may prove too limiting. Multi-line function bodies may be needed.
 - **Error messages**: Parse and build error messages should include file path (not just line number) for multi-file projects.
 - **Test coverage**: Config blocks, loops, and user-defined functions have limited integration tests.
-- **Documentation**: DESIGN.md is comprehensive but some newer features (inline comments, `-C` flag) may not be fully documented.
+- **`[verify]` annotation**: specified in DESIGN.md §11 but not parsed; it currently becomes a target named `[verify]`. Either implement it or make unknown annotations a parse error.
+- **`@` recipe prefix**: accepted and stripped with no effect. Implement per-line silencing under `-v`/`-n`, or document it permanently as a no-op.
+- **`OutputHash`**: recorded in the build database but never consulted by a staleness check.
 
 ## Out of scope for 1.0
 
