@@ -1,0 +1,21 @@
+# Second-platform regression net for the owner gate (think 🎯T8). The
+# authoritative gate is scripts/hooks/pre-push, which runs `make gate`
+# before every push; this runs the same target after the fact, and on
+# inbound external pull requests.
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make gate
