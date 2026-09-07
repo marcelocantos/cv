@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseVariables(t *testing.T) {
@@ -2560,5 +2561,86 @@ func createTarball(t *testing.T, dir, name string, files []string) {
 	c.Dir = dir
 	if out, err := c.CombinedOutput(); err != nil {
 		t.Fatalf("creating tarball: %s: %v", string(out), err)
+	}
+}
+
+// buildInBackground runs Build off the test goroutine and returns its error.
+// A cyclic graph currently wedges forever, so an unbounded call would hang the
+// whole test binary rather than fail it. The timer only converts that hang into
+// a legible failure — the oracle is the error Build returns, not the timer.
+func buildInBackground(t *testing.T, exec *Executor, target string) error {
+	t.Helper()
+	const cycleDetectionBudget = 10 * time.Second
+	errc := make(chan error, 1)
+	go func() { errc <- exec.Build(target) }()
+	select {
+	case err := <-errc:
+		return err
+	case <-time.After(cycleDetectionBudget):
+		t.Fatalf("Build(%q) did not return within %v: a cyclic graph must error, not deadlock",
+			target, cycleDetectionBudget)
+		return nil
+	}
+}
+
+func newCycleExecutor(t *testing.T, cvfile string) *Executor {
+	t.Helper()
+	dir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(oldDir) })
+
+	f, err := Parse(strings.NewReader(cvfile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	vars := NewVars()
+	state := &BuildState{Targets: make(map[string]*TargetState)}
+	graph, err := BuildGraph(f, vars, state, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewExecutor(graph, state, vars, &ExecutorArgs{Jobs: 4})
+}
+
+// A rule that depends on itself is a cvfile bug. It must be reported as one.
+func TestCycleSelf(t *testing.T) {
+	exec := newCycleExecutor(t, `
+a.txt: a.txt
+    touch $target
+`)
+	err := buildInBackground(t, exec, "a.txt")
+	if err == nil {
+		t.Fatal("Build succeeded on a self-cycle, want an error")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("error = %v, want it to name the cycle", err)
+	}
+	if !strings.Contains(err.Error(), "a.txt") {
+		t.Errorf("error = %v, want it to name the target involved", err)
+	}
+}
+
+// The two-node cycle is the one that deadlocks: each target waits on the
+// other's buildResult, so neither ever closes.
+func TestCycleTwo(t *testing.T) {
+	exec := newCycleExecutor(t, `
+a.txt: b.txt
+    touch $target
+
+b.txt: a.txt
+    touch $target
+`)
+	err := buildInBackground(t, exec, "a.txt")
+	if err == nil {
+		t.Fatal("Build succeeded on an a->b->a cycle, want an error")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("error = %v, want it to name the cycle", err)
+	}
+	for _, want := range []string{"a.txt", "b.txt"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want it to name %q", err, want)
+		}
 	}
 }

@@ -86,12 +86,45 @@ func NewExecutor(graph *Graph, state *BuildState, vars *Vars, args *ExecutorArgs
 	}
 }
 
+// ancestor is one link in the chain of targets whose build is on the current
+// call stack. Identity is the buildResult rather than the name, so a cycle that
+// closes through a co-target of a multi-output rule is caught too: co-targets
+// share one buildResult.
+type ancestor struct {
+	target string
+	res    *buildResult
+}
+
+// cycleError describes the dependency cycle that closes when chain is extended
+// by target, e.g. "a.txt -> b.txt -> a.txt".
+func cycleError(chain []ancestor, target string) error {
+	path := make([]string, 0, len(chain)+1)
+	for _, a := range chain {
+		path = append(path, a.target)
+	}
+	path = append(path, target)
+	return fmt.Errorf("dependency cycle involving %q: %s", target, strings.Join(path, " -> "))
+}
+
 // Build builds the given target and all its dependencies.
 // Safe to call concurrently from multiple goroutines.
 func (e *Executor) Build(target string) error {
+	return e.build(target, nil)
+}
+
+// build is Build with the ancestor chain of the current call stack. Waiting on
+// a target that is already an ancestor would wait forever — that target's
+// buildResult cannot close until this call returns — so a cycle is reported
+// instead of deadlocking.
+func (e *Executor) build(target string, ancestors []ancestor) error {
 	e.mu.Lock()
 	if res, ok := e.building[target]; ok {
 		e.mu.Unlock()
+		for i, a := range ancestors {
+			if a.res == res {
+				return cycleError(ancestors[i:], target)
+			}
+		}
 		<-res.done
 		return res.err
 	}
@@ -110,13 +143,19 @@ func (e *Executor) Build(target string) error {
 	}
 	e.mu.Unlock()
 
-	err = e.doBuild(target, rule)
+	// A fresh slice, not append(ancestors, …): sibling prereqs are built on
+	// concurrent goroutines and would otherwise share a backing array.
+	chain := make([]ancestor, len(ancestors)+1)
+	copy(chain, ancestors)
+	chain[len(ancestors)] = ancestor{target: target, res: res}
+
+	err = e.doBuild(target, rule, chain)
 	res.err = err
 	close(res.done)
 	return err
 }
 
-func (e *Executor) doBuild(target string, rule *resolvedRule) error {
+func (e *Executor) doBuild(target string, rule *resolvedRule, ancestors []ancestor) error {
 	// Build all prerequisites concurrently
 	allPrereqs := make([]string, 0, len(rule.prereqs)+len(rule.orderOnlyPrereqs))
 	allPrereqs = append(allPrereqs, rule.prereqs...)
@@ -128,7 +167,7 @@ func (e *Executor) doBuild(target string, rule *resolvedRule) error {
 		wg.Add(1)
 		go func(idx int, prereq string) {
 			defer wg.Done()
-			errs[idx] = e.Build(prereq)
+			errs[idx] = e.build(prereq, ancestors)
 		}(i, p)
 	}
 	wg.Wait()
@@ -161,7 +200,7 @@ func (e *Executor) doBuild(target string, rule *resolvedRule) error {
 		// recipe runs. Leaf paths need no build.
 		for _, p := range scanDiscovered {
 			if e.graph != nil && e.graph.HasRuleFor(p) {
-				if berr := e.Build(p); berr != nil {
+				if berr := e.build(p, ancestors); berr != nil {
 					return fmt.Errorf("scan-discovered %q for %q: %w", p, rule.target, berr)
 				}
 			}
