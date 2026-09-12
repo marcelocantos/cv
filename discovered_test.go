@@ -310,11 +310,13 @@ func TestIsStaleDiscoveredVanished(t *testing.T) {
 	cache := NewHashCache()
 	hC, _ := cache.Hash("a.c")
 	hH, _ := cache.Hash("a.h")
+	hO, _ := cache.Hash("a.o")
 
 	state := &BuildState{Targets: map[string]*TargetState{
 		"a.o": {
 			RecipeHash:            hashString("recipe"),
 			InputHashes:           map[string]string{"a.c": hC},
+			OutputHash:            hO,
 			Prereqs:               []string{"a.c"},
 			DiscoveredPrereqs:     []string{"a.h"},
 			DiscoveredInputHashes: map[string]string{"a.h": hH},
@@ -335,6 +337,30 @@ func TestIsStaleDiscoveredVanished(t *testing.T) {
 	}
 }
 
+func TestIsStaleOutputModifiedOutsideBuild(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	os.WriteFile("in", []byte("src"), 0o644)
+	os.WriteFile("out", []byte("built"), 0o644)
+
+	state := &BuildState{Targets: make(map[string]*TargetState)}
+	cache := NewHashCache()
+	state.Record([]string{"out"}, []string{"in"}, "recipe", "", nil, nil, cache)
+
+	if state.IsStale([]string{"out"}, []string{"in"}, "recipe", "", cache) {
+		t.Fatal("just-recorded output should not be stale")
+	}
+
+	// Tamper with the output without going through cv. Existence is unchanged;
+	// only the content hash differs from the recorded OutputHash.
+	os.WriteFile("out", []byte("tampered-outside-build"), 0o644)
+	cache = NewHashCache()
+	if !state.IsStale([]string{"out"}, []string{"in"}, "recipe", "", cache) {
+		t.Fatal("output modified outside the build must be stale")
+	}
+}
+
 func TestIsStaleDiscoveredChanged(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
@@ -346,11 +372,13 @@ func TestIsStaleDiscoveredChanged(t *testing.T) {
 	cache := NewHashCache()
 	hC, _ := cache.Hash("a.c")
 	hH, _ := cache.Hash("a.h")
+	hO, _ := cache.Hash("a.o")
 
 	state := &BuildState{Targets: map[string]*TargetState{
 		"a.o": {
 			RecipeHash:            hashString("recipe"),
 			InputHashes:           map[string]string{"a.c": hC},
+			OutputHash:            hO,
 			Prereqs:               []string{"a.c"},
 			DiscoveredPrereqs:     []string{"a.h"},
 			DiscoveredInputHashes: map[string]string{"a.h": hH},

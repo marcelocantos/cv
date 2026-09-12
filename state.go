@@ -124,8 +124,11 @@ func (s *BuildState) IsStale(targets []string, prereqs []string, recipeText, fin
 				return true
 			}
 		} else {
-			// File mode: check target exists and prereq hashes.
+			// File mode: check target exists, content hash, and prereq hashes.
 			if _, err := os.Stat(targets[i]); os.IsNotExist(err) {
+				return true
+			}
+			if h, err := cache.Hash(targets[i]); err != nil || ts.OutputHash != h {
 				return true
 			}
 

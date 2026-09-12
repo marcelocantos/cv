@@ -748,6 +748,7 @@ func TestOrderOnlyNoRebuild(t *testing.T) {
 	cvfile := `
 out.txt: src.txt | order.txt
     cat $input > $target
+    echo ran >> recipe.log
 `
 	f, err := Parse(strings.NewReader(cvfile))
 	if err != nil {
@@ -768,10 +769,8 @@ out.txt: src.txt | order.txt
 	}
 	state.Save("")
 
-	// Overwrite out.txt with a sentinel so we can detect if recipe re-runs
-	os.WriteFile(filepath.Join(dir, "out.txt"), []byte("sentinel"), 0o644)
-
-	// Modify the order-only prereq
+	// Modify the order-only prereq. Do not touch the output: output-hash
+	// staleness (ENT-001) would treat a sentinel overwrite as a real rebuild.
 	os.WriteFile(filepath.Join(dir, "order.txt"), []byte("order2-changed"), 0o644)
 
 	// Reload state and rebuild — recipe should NOT run
@@ -786,10 +785,9 @@ out.txt: src.txt | order.txt
 		t.Fatal(err)
 	}
 
-	// Sentinel should still be there — recipe didn't re-run
-	got, _ := os.ReadFile(filepath.Join(dir, "out.txt"))
-	if string(got) != "sentinel" {
-		t.Errorf("recipe should NOT have re-run, but out.txt = %q", string(got))
+	got, _ := os.ReadFile(filepath.Join(dir, "recipe.log"))
+	if strings.Count(string(got), "ran") != 1 {
+		t.Errorf("recipe should NOT have re-run, recipe.log = %q", string(got))
 	}
 }
 
