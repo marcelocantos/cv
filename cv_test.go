@@ -2550,6 +2550,50 @@ func TestLocalFileOverridesStdlib(t *testing.T) {
 	}
 }
 
+func TestScanSkippedOnDryRun(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	os.WriteFile("in", []byte("x"), 0o644)
+	os.WriteFile("cvfile", []byte(`
+out [scan: touch scan.ran && printf 'out: in\n']: in
+	cp $input $target
+`), 0o644)
+
+	g, state, vars := loadGraphAndState(t, "cvfile", "")
+	ex := NewExecutor(g, state, vars, &ExecutorArgs{Jobs: 1, DryRun: true})
+	if err := ex.Build("out"); err != nil {
+		t.Fatalf("dry-run build: %v", err)
+	}
+	if _, err := os.Stat("scan.ran"); err == nil {
+		t.Fatal("scan command executed during dry-run")
+	}
+}
+
+func TestScanSkippedWhenUpToDate(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	os.WriteFile("in", []byte("x"), 0o644)
+	os.WriteFile("cvfile", []byte(`
+out [scan: touch scan.ran && printf 'out: in\n']: in
+	cp $input $target
+`), 0o644)
+
+	mustBuild(t, "out")
+	if _, err := os.Stat("scan.ran"); err != nil {
+		t.Fatalf("first build should have run scan: %v", err)
+	}
+	if err := os.Remove("scan.ran"); err != nil {
+		t.Fatal(err)
+	}
+
+	mustBuild(t, "out")
+	if _, err := os.Stat("scan.ran"); err == nil {
+		t.Fatal("scan command re-ran on an up-to-date target")
+	}
+}
+
 // createTarball creates a .tar.gz from the given files in the directory.
 func createTarball(t *testing.T, dir, name string, files []string) {
 	t.Helper()

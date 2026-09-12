@@ -184,13 +184,25 @@ func (e *Executor) doBuild(target string, rule *resolvedRule, ancestors []ancest
 		return nil
 	}
 
-	// Scan pre-pass (DESIGN.md §11.4): if this rule declares a [scan: …]
-	// cheap analysis command, run it and build any in-graph paths it
-	// discovers before checking staleness or running the heavy recipe.
-	// Discovered paths are folded into the soft-edge set so they also
-	// invalidate on the next run.
+	// Staleness first: an up-to-date target must not re-run [scan:].
+	// Scan-discovered inputs from the last successful run are already in
+	// TargetState and are checked by IsStale / discoveredStale.
+	recipeText := e.expandRecipe(rule)
+	fingerprint := e.expandFingerprint(rule)
+	if !rule.isTask && !e.force && !e.state.IsStale(rule.targets, rule.prereqs, recipeText, fingerprint, e.cache) {
+		if e.verbose {
+			e.outputMu.Lock()
+			fmt.Fprintf(os.Stderr, "cv: %q is up to date\n", rule.target)
+			e.outputMu.Unlock()
+		}
+		return nil
+	}
+
+	// Scan pre-pass (DESIGN.md §11.4): only when we are actually going to
+	// run the heavy recipe (or would, absent -n). Dry-run must not execute
+	// the scan shell command.
 	var scanDiscovered []string
-	if !rule.isTask && rule.scan != "" {
+	if !e.dryRun && !rule.isTask && rule.scan != "" {
 		var serr error
 		scanDiscovered, serr = e.runScan(rule)
 		if serr != nil {
@@ -205,18 +217,6 @@ func (e *Executor) doBuild(target string, rule *resolvedRule, ancestors []ancest
 				}
 			}
 		}
-	}
-
-	// Check staleness (only normal prereqs affect staleness)
-	recipeText := e.expandRecipe(rule)
-	fingerprint := e.expandFingerprint(rule)
-	if !rule.isTask && !e.force && !e.state.IsStale(rule.targets, rule.prereqs, recipeText, fingerprint, e.cache) {
-		if e.verbose {
-			e.outputMu.Lock()
-			fmt.Fprintf(os.Stderr, "cv: %q is up to date\n", rule.target)
-			e.outputMu.Unlock()
-		}
-		return nil
 	}
 
 	// Acquire semaphore slot to limit concurrent recipes
