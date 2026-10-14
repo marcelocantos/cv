@@ -409,7 +409,7 @@ func (g *Graph) evalPatternInclude(pattern, _ string) error {
 		globPattern = filepath.Join(g.scopePrefix, globPattern)
 	}
 
-	matches, err := filepath.Glob(globPattern)
+	matches, err := globStar(globPattern)
 	if err != nil {
 		return fmt.Errorf("include glob %q: %w", globPattern, err)
 	}
