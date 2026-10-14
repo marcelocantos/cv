@@ -532,8 +532,9 @@ func envelopeViolations(envelope string, discovered []string) []string {
 				matched = true
 				break
 			}
-			// Handle simple ** prefix/suffix globs by doubleStarMatch.
-			if doubleStarMatch(g, p) {
+			// "**" segments match zero or more directories; doubleStarMatch
+			// keeps the legacy prefix/suffix shape working.
+			if matchStar(g, p) || doubleStarMatch(g, p) {
 				matched = true
 				break
 			}
