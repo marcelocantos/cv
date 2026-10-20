@@ -5,7 +5,6 @@ package cv
 
 import (
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
@@ -14,7 +13,7 @@ func wildcardGlob(pattern string) ([]string, error) {
 	patterns := strings.Fields(pattern)
 	var all []string
 	for _, p := range patterns {
-		matches, err := filepath.Glob(p)
+		matches, err := globStar(p)
 		if err != nil {
 			return nil, err
 		}
