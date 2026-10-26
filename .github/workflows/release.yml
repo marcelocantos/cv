@@ -41,28 +41,3 @@ jobs:
           # Create release if it doesn't exist yet
           gh release create "$tag" --title "$tag" --generate-notes 2>/dev/null || true
           gh release upload "$tag" cv-${version}-*.tar.gz --clobber
-
-      - name: Update Homebrew formula
-        uses: Justintime50/homebrew-releaser@v3
-        with:
-          homebrew_owner: marcelocantos
-          homebrew_tap: homebrew-tap
-          github_token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          install: |-
-            bin.install "cv"
-            bash_completion.install "completions/cv.bash" => "cv"
-            zsh_completion.install "completions/cv.zsh" => "_cv"
-          test: |-
-            (testpath/"cvfile").write <<~EOS
-              greeting = world
-
-              hello.txt:
-                  echo $greeting > $target
-            EOS
-            system bin/"cv", "-n", "hello.txt"
-          version: ${{ github.ref_name }}
-          target_darwin_amd64: false
-          target_darwin_arm64: true
-          target_linux_amd64: true
-          target_linux_arm64: true
-          skip_checksum: true
