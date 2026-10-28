@@ -238,12 +238,12 @@ items:
 
   - id: release.homebrew
     dim: release
-    desc: Published to the Homebrew tap on release
+    desc: Published to the Homebrew tap on release via tapper (scripts/release-tap.sh → tapper push)
     state: present
     cadence: per-release
     enforce: informational
     tier: 2
-    evidence: {ci_step: {workflow: release.yml, name: Update Homebrew formula}}
+    evidence: {file: {path: scripts/release-tap.sh, matches: 'tapper push'}}
 
   - id: release.semver-minor
     dim: release

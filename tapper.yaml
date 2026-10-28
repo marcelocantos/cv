@@ -1,0 +1,29 @@
+# Homebrew tap publication for cv. `tapper push` runs from the dev
+# Mac after the GitHub release exists; the token lives in the macOS
+# keychain, so there is no Actions secret and no CI step.
+repo: marcelocantos/cv
+tap:
+  owner: marcelocantos
+  name: homebrew-tap
+push:
+  darwin_amd64: false
+  darwin_arm64: true
+  linux_amd64: true
+  linux_arm64: true
+  skip_checksum: true
+  update_readme_table: false
+install: |-
+  bin.install "cv"
+  bash_completion.install "completions/cv.bash" => "cv"
+  zsh_completion.install "completions/cv.zsh" => "_cv"
+test: |-
+  (testpath/"cvfile").write <<~EOS
+    greeting = world
+
+    hello.txt:
+        echo $greeting > $target
+  EOS
+  system bin/"cv", "-n", "hello.txt"
+token:
+  env: HOMEBREW_TAP_TOKEN
+  op: op://Personal/GitHub Homebrew Tap PAT/token
